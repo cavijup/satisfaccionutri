@@ -1,277 +1,591 @@
-import streamlit as st
 import pandas as pd
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials # Para gspread < 6.0
-import os
+import numpy as np
+import matplotlib.pyplot as plt
+import plotly.express as px
+from wordcloud import WordCloud
+import streamlit as st
+from collections import Counter
+import re
 
-# --- INICIO DE FUNCIONES DE TU data_loader.py ORIGINAL ---
-# (Con añadidos para depuración en la nube)
+# Mapeo de columnas a descripciones (Usado en varias páginas)
+COL_DESCRIPTIONS = {
+    '9fecha_vencimiento': 'Fecha de vencimiento de abarrotes',
+    '10tipo_empaque': 'Tipo de empaque de abarrotes',
+    '11productos_iguales_lista_mercado': 'Correspondencia con lista de mercado',
+    '12carnes_bien_etiquetadas': 'Etiquetado de carnes',
+    '13producto_congelado': 'Estado de congelación',
+    '14corte_recibido': 'Correspondencia del corte',
+    '15fecha_vencimiento_adecuada': 'Fecha de vencimiento adecuada',
+    '16empacado_al_vacio': 'Empacado al vacío',
+    '17estado_huevo': 'Estado de los huevos',
+    '18panal_de_huevo_etiquetado': 'Etiquetado del panal de huevos',
+    '19frutas': 'Estado de las frutas',
+    '20verduras': 'Estado de las verduras',
+    '21hortalizas': 'Estado de las hortalizas',
+    '22tuberculos': 'Estado de los tubérculos',
+    '23ciclo_menus': 'Ciclo de menús establecido',
+    '24notificacion_telefonica': 'Notificación telefónica',
+    '25tiempo_revision_alimentos': 'Tiempo para revisar alimentos',
+    '26tiempo_entrega_mercdos': 'Tiempo entre entregas', # Nota: posible typo 'mercdos' vs 'mercados'
+    '27tiempo_demora_proveedor': 'Tiempo de respuesta del proveedor',
+    '28actitud_funcionario_logistico': 'Actitud del funcionario logístico'
+    # Añade aquí más mapeos si tienes otras columnas
+}
 
-def print_unique_values(df):
+# Definiciones de categorías para análisis (Usado en Home.py y 5_Analisis_Geografico.py)
+CATEGORIES = {
+    "Abarrotes": ["9fecha_vencimiento", "10tipo_empaque", "11productos_iguales_lista_mercado"],
+    "Cárnicos y Huevos": ["12carnes_bien_etiquetadas", "13producto_congelado", "14corte_recibido",
+                           "15fecha_vencimiento_adecuada", "16empacado_al_vacio", "17estado_huevo",
+                           "18panal_de_huevo_etiquetado"],
+    "Frutas y Verduras": ["19frutas", "20verduras", "21hortalizas", "22tuberculos"],
+    "Proceso de Entrega": ["23ciclo_menus", "24notificacion_telefonica", "25tiempo_revision_alimentos",
+                            "26tiempo_entrega_mercdos", "27tiempo_demora_proveedor", "28actitud_funcionario_logistico"]
+}
+
+# Preguntas sí/no (Usado en 4_Proceso_Entrega.py)
+YES_NO_COLS = {
+    "29plazos_entrega_mercados": "¿Se cumplen los plazos establecidos?",
+    "30brindan_informacion_productos": "¿Brindan información sobre los productos?"
+}
+
+# --- INICIO FUNCIONES ---
+
+def get_satisfaction_columns(df):
     """
-    Imprime los valores únicos de las columnas de satisfacción (ANTES del procesamiento).
+    Identifica las columnas de satisfacción disponibles y válidas en el DataFrame.
+    Se asume que estas columnas ya han sido procesadas a numéricas por data_loader.
     """
-    satisfaction_cols = [col for col in df.columns if col.startswith(('9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28'))]
-    
-    # DEBUGGING EN LA NUBE (imprime a los logs de Streamlit Cloud)
-    print("="*50)
-    print("DEBUG: VALORES ÚNICOS ANTES de process_satisfaction_columns:")
-    print("="*50)
-    for col in satisfaction_cols:
-        if col in df.columns:
-            # Convertir a string para .unique() para evitar errores con tipos mixtos si los hay
-            try:
-                unique_values = df[col].astype(str).unique()
-                print(f"\nColumna '{col}' (dtype original: {df[col].dtype}):")
-                for i, value in enumerate(unique_values[:10]): # Mostrar solo los primeros 10
-                    # No es necesario mostrar el tipo aquí ya que lo convertimos a str para .unique()
-                    print(f"  {i+1}. '{value}'")
-                if len(unique_values) == 0:
-                    print("  No hay valores o la columna está vacía.")
-            except Exception as e_unique:
-                print(f"\nColumna '{col}' (dtype original: {df[col].dtype}): Error al obtener únicos: {e_unique}")
+    # Columnas que POTENCIALMENTE son de satisfacción (basado en prefijos)
+    potential_cols = [col for col in df.columns if col.startswith(('9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28'))]
+    valid_numeric_cols = []
 
-        else:
-            print(f"Columna '{col}' NO ENCONTRADA.")
-    print("="*50)
-
-
-def process_satisfaction_columns(df):
-    """
-    Procesa las columnas de satisfacción para convertirlas a formato numérico
-    y agregar etiquetas descriptivas. (BASADO EN TU LÓGICA ORIGINAL)
-    """
-    print("DEBUG: Iniciando process_satisfaction_columns (lógica original adaptada)")
-    satisfaction_mapping = {
-        "MUY SATISFECHO": 5, "SATISFECHO": 4, "NI SATISFECHO NI INSATISFECHO": 3,
-        "INSATISFECHO": 2, "MUY INSATISFECHO": 1,
-        "MUY SATISFECHO/A": 5, "SATISFECHO/A": 4, "NI SATISFECHO/A NI INSATISFECHO/A": 3,
-        "INSATISFECHO/A": 2, "MUY INSATISFECHO/A": 1,
-        "MUY SATISFECH@": 5, "SATISFECH@": 4, "NEUTRAL": 3,
-        "INSATISFECH@": 2, "MUY INSATISFECH@": 1,
-        "5": 5, "4": 4, "3": 3, "2": 2, "1": 1, # Numéricos como string
-        5: 5, 4: 4, 3: 3, 2: 2, 1: 1           # Numéricos como int/float
-    }
-    label_mapping = {
-        5: "MUY SATISFECHO/A", 4: "SATISFECHO/A", 3: "NI SATISFECHO/A NI INSATISFECHO/A",
-        2: "INSATISFECHO/A", 1: "MUY INSATISFECHO/A"
-    }
-    satisfaction_cols = [col for col in df.columns if col.startswith(('9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28'))]
-
-    # Excluir '23por_que' si no es una columna de satisfacción numérica
-    # Basado en tus logs, parece que '23por_que' SÍ está siendo procesada.
-    # Si NO debe serlo, necesitas quitarla de `satisfaction_cols` o manejarla específicamente.
-    # Ejemplo:
-    # if '23por_que' in satisfaction_cols:
-    #     print("DEBUG: '23por_que' será excluida del procesamiento de satisfacción numérica.")
-    #     satisfaction_cols.remove('23por_que')
-
-
-    for col in satisfaction_cols:
-        if col not in df.columns:
-            print(f"  INFO: Columna de satisfacción esperada '{col}' no encontrada en el DataFrame. Saltando.")
+    for col in potential_cols:
+        # Excluir columnas auxiliares creadas en data_loader
+        if col.endswith(('_label', '_original', '_original_val_temp')):
             continue
-        try:
-            print(f"  Procesando columna: '{col}'")
-            # Guardar una copia de los valores originales para comparar después del mapeo
-            df[col + '_original_val_temp'] = df[col].copy() # Usar un nombre temporal diferente si '_original' ya existe
-            
-            # LÓGICA DE TU VERSIÓN ORIGINAL:
-            # Paso 1: Aplicar el mapeo directamente.
-            # Para mayor robustez, convertir a string, limpiar (mayúsculas, espacios) ANTES de mapear.
-            # Si tu versión original no hacía esto y funcionaba, es porque tus datos locales eran muy consistentes.
-            # Vamos a añadir la limpieza para la nube, ya que es más seguro.
-            
-            series_to_map = df[col].astype(str).str.upper().str.strip()
-            series_to_map.replace(['', 'NAN', 'NONE', '<NA>'], pd.NA, inplace=True) # Manejar strings vacíos/NaN
-            
-            df[col + '_numeric_temp'] = series_to_map.map(satisfaction_mapping)
-            
-            # Paso 2 (de tu lógica original): Verificar cuántos valores NO se convirtieron
-            na_mask = df[col + '_numeric_temp'].isna()
-            # Para identificar problemáticos, mirar en la serie que se intentó mapear (series_to_map) donde el resultado es NaN
-            # y el valor original en series_to_map no era ya pd.NA (es decir, era un string real que no se mapeó)
-            unconverted_cleaned_values = series_to_map[na_mask & series_to_map.notna()].unique()
 
-            if len(unconverted_cleaned_values) > 0:
-                print(f"    ADVERTENCIA: Columna '{col}': {len(unconverted_cleaned_values)} tipos de valores únicos (después de limpiar) no pudieron ser convertidos.")
-                print(f"    Ejemplos de valores LIMPIADOS (str, upper, strip) NO convertidos en '{col}': {unconverted_cleaned_values[:10]}")
-            
-            # Paso 3 (de tu lógica original): Usar la columna numérica si algunos se convirtieron
-            if df[col + '_numeric_temp'].notna().sum() > 0 : # Si al menos algunos valores se convirtieron
-                df[col] = df[col + '_numeric_temp'] # Reemplaza la columna original
-                df[col + '_label'] = df[col].map(label_mapping)
-                print(f"    INFO: Columna '{col}' convertida. Valores numéricos únicos (hasta 5): {df[col].dropna().unique()[:5]}")
-            else:
-                print(f"    ERROR: No se pudo convertir NINGÚN valor en la columna '{col}' a numérico o todos resultaron NaN.")
-                # Si no se convirtió nada, la columna `df[col]` original no se modifica.
-                # Crear `_label` basado en el original para evitar errores downstream.
-                if col + '_original_val_temp' in df: # Asegurarse que la copia existe
-                     df[col + '_label'] = df[col + '_original_val_temp']
-                else: # Fallback si la copia no se hizo por alguna razón
-                     df[col + '_label'] = df[col]
-
-
-            # Limpiar columnas temporales
-            if col + '_numeric_temp' in df.columns:
-                df.drop(columns=[col + '_numeric_temp'], inplace=True, errors='ignore')
-            if col + '_original_val_temp' in df.columns: # Limpiar la copia temporal
-                df.drop(columns=[col + '_original_val_temp'], inplace=True, errors='ignore')
-            
-            # Lógica de tu `else` original (mapeo temporal) - Generalmente no la recomendaría para producción
-            # Si decides usarla, asegúrate que df[col + '_original'] exista.
-            # La he omitido aquí para enfocarnos en que el mapeo principal funcione.
-
-        except Exception as e:
-            print(f"    ERROR CRÍTICO procesando columna '{col}': {str(e)}")
-            # Si hay un error, es mejor no modificar df[col] y quizás crear _label con NaNs o los originales
-            if col + '_original_val_temp' in df:
-                df[col + '_label'] = df[col + '_original_val_temp']
-            elif col in df: # Si _original_val_temp no se creó pero col existe
-                df[col + '_label'] = df[col]
-            # Limpiar por si acaso
-            if col + '_numeric_temp' in df.columns: df.drop(columns=[col + '_numeric_temp'], inplace=True, errors='ignore')
-            if col + '_original_val_temp' in df.columns: df.drop(columns=[col + '_original_val_temp'], inplace=True, errors='ignore')
-
-    print("DEBUG: Fin process_satisfaction_columns")
-    return df # Es buena práctica devolver el df, aunque se modifique in-place
-
-
-@st.cache_data(ttl=600)
-def load_data():
-    print("DEBUG: Iniciando load_data()")
-    try:
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        using_secrets = False # Bandera para saber de dónde se cargaron
-
-        # Intentar cargar credenciales desde Streamlit Secrets
-        if "gcp_service_account" in st.secrets:
-            creds_dict = st.secrets["gcp_service_account"]
-            credentials = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-            using_secrets = True
-            print("INFO: Credenciales cargadas desde Streamlit Secrets.")
-        else:
-            # Caer de nuevo a archivo local si no está en secrets (para desarrollo local)
-            current_dir = os.path.dirname(os.path.abspath(__file__)) # Directorio 'utils'
-            project_root = os.path.dirname(current_dir) # Raíz del proyecto
-            credentials_path = os.path.join(project_root, 'credentials.json')
-
-            if not os.path.exists(credentials_path):
-                # Mostrar error en la app y en logs
-                st.error(f"Credenciales NO ENCONTRADAS: Archivo 'credentials.json' no hallado en '{credentials_path}' y 'gcp_service_account' no está en st.secrets.")
-                print(f"ERROR FATAL: Credenciales NO ENCONTRADAS. 'credentials.json' no en '{credentials_path}' y no hay secrets.")
-                return pd.DataFrame() # Retornar DataFrame vacío es crucial aquí
-            credentials = ServiceAccountCredentials.from_json_keyfile_name(credentials_path, scope)
-            print("INFO: Credenciales cargadas desde archivo local 'credentials.json'.")
-
-        gc = gspread.authorize(credentials)
-        google_sheet_id = '1-PcFOekoC42u-DpxmKP7byKsUHbiqMb96gZ9rbH5I_0'
-        worksheet_name = 'ENCUESTA'
-        
-        # Mostrar en la app de dónde se cargaron las credenciales (solo si no da error antes)
-        # Este mensaje se debe mover después de la carga exitosa o podría no aparecer si hay errores tempranos.
-        # O usar print() para logs y st.sidebar para la UI después de que df se cargue.
-
-        print(f"INFO: Abriendo hoja '{worksheet_name}' con ID '{google_sheet_id}'...")
-        sheet = gc.open_by_key(google_sheet_id)
-        worksheet = sheet.worksheet(worksheet_name)
-        
-        print("INFO: Obteniendo todos los registros...")
-        data = worksheet.get_all_records(empty_value=None) # Usar empty_value=None o '' para consistencia
-        df = pd.DataFrame(data)
-        print(f"INFO: {len(df)} registros cargados desde Google Sheets.")
-
-        if df.empty:
-            st.warning("La hoja de cálculo está vacía o no se pudieron leer registros.")
-            print("WARN: El DataFrame está vacío después de cargar desde Google Sheets.")
-            return pd.DataFrame()
-        
-        # Mostrar mensajes de carga de credenciales en la sidebar DESPUÉS de una carga exitosa de df
-        if using_secrets:
-            st.sidebar.success("Credenciales cargadas desde Streamlit Secrets.")
-        else:
-            st.sidebar.info("Credenciales cargadas desde archivo local.")
-            
-        if 'fecha' in df.columns:
-            df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
-        
-        # Llamar a print_unique_values ANTES del procesamiento
-        print_unique_values(df.copy()) # Pasar copia para no modificarla antes de procesar
-        
-        # Llamar a process_satisfaction_columns.
-        # La versión de arriba ahora devuelve df.
-        df = process_satisfaction_columns(df)
-
-        # Imprimir información DESPUÉS del procesamiento para verificar
-        print("="*50)
-        print("DEBUG: ESTADO FINAL DE COLUMNAS DE SATISFACCIÓN (después de process_satisfaction_columns):")
-        print("="*50)
-        final_satisfaction_cols_check = [col for col in df.columns if col.startswith(('9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28')) and not col.endswith('_label')] # Excluir _label
-        
-        for col_check in final_satisfaction_cols_check:
-            if col_check in df.columns:
-                # Para columnas que deberían ser numéricas, mostrar su dtype y algunos valores
-                print(f"  Columna Final '{col_check}' (dtype: {df[col_check].dtype}), Valores únicos (hasta 5): {df[col_check].dropna().unique()[:5]}")
-                if not pd.api.types.is_numeric_dtype(df[col_check].dtype) and df[col_check].notna().any():
-                     print(f"    ALERTA: La columna '{col_check}' NO ES NUMÉRICA después del procesamiento.")
-            else:
-                print(f"  Columna Final '{col_check}' no encontrada (¿fue eliminada o renombrada?).")
-        print("="*50)
-        
-        print("DEBUG: load_data() completado.")
-        return df
-    
-    except gspread.exceptions.APIError as e:
-        error_msg = f"Error de API de Google Sheets: {e}."
-        details_msg = ""
-        if hasattr(e, 'response') and hasattr(e.response, 'json'):
+        # Verificar si la columna existe y es numérica (o convertible)
+        if col in df.columns:
             try:
-                details_msg = f" Detalles del error de API: {e.response.json()}"
-            except Exception:
-                details_msg = f" No se pudieron obtener detalles JSON del error de API. Código de estado: {e.response.status_code if hasattr(e.response, 'status_code') else 'N/A'}"
-        full_error = error_msg + details_msg
-        st.error(full_error) # Para la UI de Streamlit
-        print(f"ERROR_API: {full_error}") # Para los logs de Streamlit Cloud
-        return pd.DataFrame()
-    except Exception as e:
-        st.error(f"Error general al cargar los datos: {e} (Tipo: {type(e).__name__})")
-        print(f"ERROR_GENERAL: Error al cargar los datos: {e} (Tipo: {type(e).__name__})")
-        return pd.DataFrame()
+                # Forzar conversión a numérico aquí por si acaso, aunque debería venir de data_loader
+                numeric_data = pd.to_numeric(df[col], errors='coerce')
+                # Considerar válida si tiene al menos un valor numérico no-NaN
+                if numeric_data.notna().any():
+                    valid_numeric_cols.append(col)
+                # else:
+                #     print(f"DEBUG get_satisfaction_columns: Columna '{col}' no contiene valores numéricos válidos.")
+            except Exception as e:
+                print(f"DEBUG get_satisfaction_columns: Error verificando columna '{col}': {str(e)}")
+        # else:
+        #     print(f"DEBUG get_satisfaction_columns: Columna potencial '{col}' no encontrada en df.")
 
 
-def get_filtered_data(df, date_range=None, comuna=None, barrio=None, nodo=None):
-    if df is None or df.empty:
-        return pd.DataFrame()
-        
-    filtered_df = df.copy()
-    if date_range and len(date_range) == 2 and 'fecha' in df.columns:
-        try:
-            # Asegurar que los valores de date_range son convertibles a fechas
-            start_val, end_val = date_range
-            start_date = pd.to_datetime(start_val).date()
-            end_date = pd.to_datetime(end_val).date()
+    # print(f"DEBUG get_satisfaction_columns: Columnas válidas encontradas: {valid_numeric_cols}")
+    return valid_numeric_cols
 
-            if not pd.api.types.is_datetime64_any_dtype(filtered_df['fecha']):
-                filtered_df['fecha'] = pd.to_datetime(filtered_df['fecha'], errors='coerce')
-            
-            if filtered_df['fecha'].notna().any():
-                 filtered_df = filtered_df[
-                     (filtered_df['fecha'].dt.date >= start_date) & 
-                     (filtered_df['fecha'].dt.date <= end_date)
-                 ]
-        except Exception as e:
-            print(f"WARN: Error al procesar filtro de fecha: {e}. Rango de fechas: {date_range}. Filtro de fecha no aplicado.")
-            # Decide si quieres que la app continúe sin filtro de fecha o lance un error más visible.
 
-    location_filters = {'comuna': comuna, 'barrio': barrio, 'nodo': nodo}
-    for col_name, selected_value in location_filters.items():
-        if selected_value and selected_value != "Todas" and col_name in filtered_df.columns:
-            if filtered_df[col_name].notna().any():
-                # Convertir la columna del df a string para comparación robusta
-                # Asegurar que el valor seleccionado también sea string
-                filtered_df = filtered_df[filtered_df[col_name].astype(str).str.strip() == str(selected_value).strip()]
-            else:
-                print(f"WARN: La columna de filtro '{col_name}' solo contiene NaNs (o está vacía después de filtros previos). El filtro por '{selected_value}' no encontrará coincidencias.")
-                # Si la columna del filtro está vacía o toda NaN, filtrar resultará en un df vacío.
-                # Esto es a menudo un comportamiento esperado, pero el warning es útil.
-    return filtered_df
+def calculate_category_satisfaction(df, category_name):
+    """
+    Calcula la satisfacción promedio para una categoría específica.
+    Utiliza get_satisfaction_columns para asegurar que se usan columnas válidas.
+    """
+    if category_name not in CATEGORIES:
+        print(f"WARN calculate_category_satisfaction: Categoría '{category_name}' no definida.")
+        return None
+
+    # Obtener todas las columnas de satisfacción numéricas válidas del df ACTUAL
+    all_valid_satisfaction_cols = get_satisfaction_columns(df)
+
+    # Filtrar las que pertenecen a la categoría solicitada
+    category_cols_in_df = [col for col in CATEGORIES[category_name] if col in all_valid_satisfaction_cols]
+
+    if not category_cols_in_df:
+        # print(f"DEBUG calculate_category_satisfaction: No hay columnas válidas para la categoría '{category_name}' en el dataframe actual.")
+        return None
+
+    # Calcular el promedio de los promedios de cada columna válida en la categoría
+    category_means = []
+    for col in category_cols_in_df:
+        # La columna ya debería ser numérica por get_satisfaction_columns, pero re-verificar por seguridad
+        numeric_data = pd.to_numeric(df[col], errors='coerce')
+        if numeric_data.notna().any():
+            col_mean = numeric_data.mean()
+            if not pd.isna(col_mean):
+                category_means.append(col_mean)
+
+    if not category_means:
+        # print(f"DEBUG calculate_category_satisfaction: No se pudieron calcular promedios para las columnas de '{category_name}'.")
+        return None
+
+    return sum(category_means) / len(category_means)
+
+
+def plot_satisfaction_by_category(df):
+    """
+    Crea un gráfico de barras con la satisfacción promedio por categoría.
+    """
+    category_means_data = []
+    for category in CATEGORIES:
+        mean = calculate_category_satisfaction(df, category)
+        if mean is not None:
+            category_means_data.append({
+                "Categoría": category,
+                "Promedio de Satisfacción": mean
+            })
+
+    if not category_means_data:
+        print("INFO plot_satisfaction_by_category: No hay datos de promedios por categoría para graficar.")
+        # Podrías retornar un mensaje o una figura vacía en lugar de None
+        # return None
+        # Opcional: retornar figura con mensaje
+        fig = px.bar(title="Satisfacción Promedio por Categoría")
+        fig.update_layout(annotations=[dict(text="No hay datos suficientes", showarrow=False)])
+        return fig
+
+
+    category_df = pd.DataFrame(category_means_data)
+
+    fig = px.bar(
+        category_df,
+        x="Categoría",
+        y="Promedio de Satisfacción",
+        title="Satisfacción Promedio por Categoría",
+        color="Categoría",
+        color_discrete_sequence=px.colors.qualitative.Set2, # Puedes cambiar la paleta de colores
+        text='Promedio de Satisfacción', # Mostrar valor en las barras
+        height=450 # Ajustar altura si es necesario
+    )
+
+    fig.update_traces(texttemplate='%{text:.2f}', textposition='outside') # Formato del texto
+    fig.update_layout(
+        yaxis_range=[1, 5], # Asegurar rango de 1 a 5
+        yaxis_title="Promedio (1=Muy Insatisfecho, 5=Muy Satisfecho)",
+        xaxis_title="Categoría de Productos/Servicio",
+        uniformtext_minsize=8, uniformtext_mode='hide' # Para manejar texto en barras pequeñas
+    )
+    return fig
+
+
+def plot_question_satisfaction(df, question_col, question_text):
+    """
+    Crea un gráfico de barras para la distribución de respuestas a una pregunta específica.
+    Usa la columna '_label' creada por process_satisfaction_columns.
+    """
+    label_col = question_col + '_label'
+
+    if label_col not in df.columns:
+        print(f"ERROR plot_question_satisfaction: Columna de etiquetas '{label_col}' no encontrada para la pregunta '{question_col}'.")
+        # Intentar usar la columna original si _label no existe
+        if question_col in df.columns:
+             print(f"WARN plot_question_satisfaction: Usando columna original '{question_col}' porque '{label_col}' no existe.")
+             col_to_use = question_col
+        else:
+             print(f"ERROR plot_question_satisfaction: Ni '{label_col}' ni '{question_col}' encontradas.")
+             # Opcional: retornar figura con mensaje
+             fig = px.bar(title=f"Distribución de Respuestas: {question_text}")
+             fig.update_layout(annotations=[dict(text="Columna no encontrada", showarrow=False)])
+             return fig
+    elif df[label_col].isna().all():
+        print(f"INFO plot_question_satisfaction: Columna de etiquetas '{label_col}' solo contiene NaNs para '{question_col}'.")
+        # Opcional: retornar figura con mensaje
+        fig = px.bar(title=f"Distribución de Respuestas: {question_text}")
+        fig.update_layout(annotations=[dict(text="No hay datos válidos", showarrow=False)])
+        return fig
+    else:
+        col_to_use = label_col
+
+    # Contar frecuencias de las respuestas/etiquetas válidas
+    count_df = df[col_to_use].dropna().value_counts().reset_index()
+    count_df.columns = ['Respuesta', 'Conteo']
+
+
+    if count_df.empty:
+        print(f"INFO plot_question_satisfaction: No hay datos válidos (no-NaN) para graficar en la columna '{col_to_use}' para '{question_col}'.")
+        # Opcional: retornar figura con mensaje
+        fig = px.bar(title=f"Distribución de Respuestas: {question_text}")
+        fig.update_layout(annotations=[dict(text="No hay datos válidos", showarrow=False)])
+        return fig
+
+    # Ordenar por nivel de satisfacción (usando las etiquetas estándar)
+    satisfaction_order = [
+        "MUY INSATISFECHO/A",
+        "INSATISFECHO/A",
+        "NI SATISFECHO/A NI INSATISFECHO/A",
+        "SATISFECHO/A",
+        "MUY SATISFECHO/A"
+    ]
+    # Convertir la columna 'Respuesta' a categórica con el orden deseado
+    # Solo incluir categorías que realmente existen en los datos para evitar errores
+    existing_categories = [cat for cat in satisfaction_order if cat in count_df['Respuesta'].unique()]
+
+    if existing_categories:
+         count_df['Respuesta'] = pd.Categorical(count_df['Respuesta'], categories=existing_categories, ordered=True)
+         count_df = count_df.sort_values('Respuesta')
+    # else: si las respuestas no coinciden (p.ej., eran números), no se ordena por satisfacción textual.
+
+    # Crear gráfico de barras
+    # Definir un mapeo de colores para las categorías de satisfacción
+    color_map = {
+        "MUY INSATISFECHO/A": "#D32F2F", # Rojo oscuro
+        "INSATISFECHO/A": "#FF9800",     # Naranja
+        "NI SATISFECHO/A NI INSATISFECHO/A": "#FFEB3B", # Amarillo
+        "SATISFECHO/A": "#4CAF50",     # Verde
+        "MUY SATISFECHO/A": "#1E88E5"      # Azul
+        # Añade otros colores si tienes otras respuestas posibles
+    }
+
+    fig = px.bar(
+        count_df,
+        x='Respuesta',
+        y='Conteo',
+        title=f"Distribución: {question_text}", # Título más corto
+        color='Respuesta',
+        color_discrete_map=color_map, # Aplicar el mapeo de colores
+        text='Conteo' # Mostrar conteo en las barras
+    )
+
+    fig.update_layout(
+        xaxis_title="Nivel de Satisfacción",
+        yaxis_title="Cantidad de Respuestas",
+        xaxis={'categoryorder':'array', 'categoryarray':satisfaction_order}, # Asegurar orden en el eje X
+        height=400 # Ajustar altura
+    )
+    fig.update_traces(textposition='outside')
+
+    return fig
+
+
+def create_wordcloud(df, comment_col):
+    """
+    Crea una nube de palabras a partir de los comentarios de una columna.
+    """
+    if comment_col not in df.columns:
+        return None, f"La columna '{comment_col}' no está disponible."
+
+    # Concatenar comentarios, asegurando que sean strings y no nulos/vacíos
+    comments = df[comment_col].dropna().astype(str)
+    all_comments_text = ' '.join(comments[comments.str.strip() != ''])
+
+    if not all_comments_text:
+        return None, "No hay comentarios disponibles para analizar."
+
+    try:
+        wordcloud_generator = WordCloud(
+            width=800,
+            height=400,
+            background_color='white',
+            colormap='viridis', # Puedes probar otras paletas: 'plasma', 'inferno', 'magma', 'cividis'
+            max_words=100,
+            contour_width=1,
+            contour_color='steelblue',
+            stopwords=None # Usaremos nuestro propio filtro después
+        ).generate(all_comments_text)
+
+        # Crear figura de matplotlib para mostrar la nube
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.imshow(wordcloud_generator, interpolation='bilinear')
+        ax.axis('off')
+        plt.tight_layout(pad=0) # Ajustar layout
+
+        # Obtener términos más frecuentes (filtrando stopwords comunes en español)
+        words = re.findall(r'\b\w+\b', all_comments_text.lower())
+        stopwords_es = [
+            'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'y', 'o', 'u', 'de', 'del', 'a', 'al', 'en',
+            'con', 'por', 'para', 'se', 'su', 'sus', 'lo', 'que', 'como', 'pero', 'mas', 'más', 'mi', 'si', 'sin',
+            'sobre', 'este', 'esta', 'esto', 'estos', 'estas', 'es', 'son', 'fue', 'fueron', 'ser', 'soy', 'eres',
+            'somos', 'sois', 'sido', 'sea', 'sean', 'siendo', 'no', 'ni', 'muy', 'mucho', 'poco', 'todo', 'nada',
+            'algo', 'alguien', 'nadie', 'donde', 'quien', 'cual', 'cuyo', 'cuya', 'cuyos', 'cuyas', 'le', 'les',
+            'me', 'te', 'nos', 'os', 'ya', 'ha', 'han', 'he', 'has', 'hemos', 'habeis', 'haya', 'hayan', 'hay',
+            'pero', 'sino', 'tambien', 'también', 'porque', 'pues', 'cuando', 'mientras', 'aunque', 'siempre',
+            'nunca', 'tal', 'vez', 'asi', 'así', 'bien', 'mal', 'desde', 'hasta', 'entre', 'contra', 'hacia',
+            'ante', 'bajo', 'cabe', 'con', 'de', 'en', 'por', 'segun', 'sin', 'so', 'tras', 'durante', 'mediante',
+            'versus', 'vía', 'yo', 'tu', 'el', 'ella', 'ello', 'nosotros', 'nosotras', 'vosotros', 'vosotras',
+            'ellos', 'ellas', 'usted', 'ustedes', 'bueno', 'buena', 'productos', 'mercado', 'gracias', 'calidad',
+            'entrega', 'recibido', 'atencion', 'gracias', 'servicio', 'grano', 'frijol', 'lenteja', 'arroz' # Añadir palabras comunes específicas del contexto
+        ]
+        word_counts = Counter(w for w in words if w not in stopwords_es and len(w) > 2) # Palabras > 2 letras
+        frequent_terms = word_counts.most_common(15) # Obtener las 15 más comunes
+
+        return fig, frequent_terms
+
+    except Exception as e_wc:
+        print(f"ERROR create_wordcloud: {e_wc}")
+        return None, f"Error al generar nube de palabras: {e_wc}"
+
+
+def plot_geographic_satisfaction(df, region_col):
+    """
+    Crea un gráfico de barras para la satisfacción promedio por región geográfica.
+    """
+    if region_col not in df.columns:
+        print(f"ERROR plot_geographic_satisfaction: Columna de región '{region_col}' no encontrada.")
+        return None
+
+    # Obtener columnas de satisfacción ya procesadas a numéricas
+    satisfaction_cols = get_satisfaction_columns(df)
+    if not satisfaction_cols:
+        print("INFO plot_geographic_satisfaction: No hay columnas de satisfacción válidas.")
+        return None
+
+    # Asegurar que las columnas de satisfacción sean numéricas (por si acaso)
+    for col in satisfaction_cols:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    # Calcular el promedio de satisfacción para cada fila (encuesta)
+    # Usar skipna=True es importante
+    df['satisfaccion_promedio_fila'] = df[satisfaction_cols].mean(axis=1, skipna=True)
+
+    # Verificar si se pudo calcular algún promedio por fila
+    if df['satisfaccion_promedio_fila'].isna().all():
+         print(f"INFO plot_geographic_satisfaction: No se pudo calcular 'satisfaccion_promedio_fila' para ninguna fila (quizás todas las columnas de satisfacción son NaN).")
+         return None
+
+    # Agrupar por la columna de región y calcular la media y el conteo
+    # Asegurarse de tratar la columna de región como string para agrupar correctamente
+    region_col_str = df[region_col].astype(str)
+    region_stats = df.groupby(region_col_str)['satisfaccion_promedio_fila'].agg(['mean', 'count']).reset_index()
+    region_stats.columns = [region_col, 'Satisfacción Promedio', 'Conteo']
+
+    # Filtrar regiones con conteo muy bajo si se desea (opcional)
+    # min_count = 3
+    # region_stats = region_stats[region_stats['Conteo'] >= min_count]
+
+    if region_stats.empty:
+        print(f"INFO plot_geographic_satisfaction: No hay datos suficientes por región '{region_col}' para graficar.")
+        return None
+
+    # Ordenar por satisfacción promedio para mejor visualización
+    region_stats = region_stats.sort_values('Satisfacción Promedio', ascending=False)
+
+    # Crear gráfico de barras
+    fig = px.bar(
+        region_stats,
+        x=region_col,
+        y='Satisfacción Promedio',
+        title=f"Satisfacción Promedio por {region_col.capitalize()}",
+        color='Satisfacción Promedio',
+        color_continuous_scale='RdYlGn', # Rojo-Amarillo-Verde (bajo a alto)
+        range_color=[1,5], # Forzar escala de color de 1 a 5
+        # Se puede usar 'Conteo' para el tamaño, pero puede hacer el gráfico complejo si hay muchas regiones
+        # size='Conteo',
+        text='Conteo', # Mostrar conteo en las barras
+        height=500 # Ajustar altura
+    )
+
+    fig.update_layout(
+        yaxis_range=[1, 5],
+        yaxis_title="Promedio (1=Muy Insatisfecho, 5=Muy Satisfecho)",
+        xaxis_title=region_col.capitalize(),
+        coloraxis_colorbar=dict(title="Satisfacción")
+    )
+    fig.update_traces(texttemplate='%{text}', textposition='outside') # Mostrar conteo fuera de la barra
+
+    return fig
+
+
+def plot_yes_no_questions(df):
+    """
+    Crea un gráfico de barras agrupadas para las preguntas de Sí/No.
+    """
+    valid_cols = {k: v for k, v in YES_NO_COLS.items() if k in df.columns}
+    if not valid_cols:
+        print("INFO plot_yes_no_questions: No se encontraron columnas Sí/No válidas.")
+        return None
+
+    yes_no_data = []
+    for col, question in valid_cols.items():
+        # Limpiar respuestas (string, quitar espacios, capitalizar 'Sí'/'No')
+        cleaned_responses = df[col].dropna().astype(str).str.strip().str.capitalize()
+        counts = cleaned_responses.value_counts().reset_index()
+        counts.columns = ['Respuesta', 'Conteo']
+        counts['Pregunta'] = question # Usar descripción corta para eje X
+        yes_no_data.append(counts)
+
+    if not yes_no_data:
+        print("INFO plot_yes_no_questions: No hay datos válidos para las preguntas Sí/No.")
+        return None
+
+    yes_no_df = pd.concat(yes_no_data)
+
+    # Asegurar que solo graficamos respuestas 'Sí' y 'No' estandarizadas
+    yes_no_df = yes_no_df[yes_no_df['Respuesta'].isin(['Sí', 'Si', 'No'])]
+    # Corregir 'Si' a 'Sí' si es necesario
+    yes_no_df['Respuesta'] = yes_no_df['Respuesta'].replace({'Si': 'Sí'})
+
+
+    if yes_no_df.empty:
+        print("INFO plot_yes_no_questions: No hay respuestas 'Sí' o 'No' válidas encontradas.")
+        return None
+
+    fig = px.bar(
+        yes_no_df,
+        x='Pregunta',
+        y='Conteo',
+        color='Respuesta',
+        barmode='group', # Barras agrupadas
+        title="Respuestas a Preguntas Sí/No",
+        color_discrete_map={'Sí': '#4CAF50', 'No': '#D32F2F'}, # Verde para Sí, Rojo para No
+        text='Conteo'
+    )
+
+    fig.update_layout(
+        xaxis_title="", # Preguntas en el eje X
+        yaxis_title="Cantidad de Respuestas",
+        legend_title="Respuesta",
+        height=400
+    )
+    fig.update_traces(textposition='outside')
+    return fig
+
+
+def plot_complexity_analysis(df):
+    """
+    Crea un gráfico circular para la percepción de complejidad del proceso.
+    """
+    complexity_col = '31pasos_recepcion_mercado'
+    if complexity_col not in df.columns:
+         print(f"INFO plot_complexity_analysis: Columna '{complexity_col}' no encontrada.")
+         return None
+
+    # Limpiar y contar frecuencias
+    cleaned_complexity = df[complexity_col].dropna().astype(str).str.strip().str.capitalize()
+    complexity_counts = cleaned_complexity.value_counts().reset_index()
+    complexity_counts.columns = ['Complejidad', 'Conteo']
+
+    if complexity_counts.empty:
+         print(f"INFO plot_complexity_analysis: No hay datos válidos en '{complexity_col}'.")
+         return None
+
+    # Ordenar categorías si es posible (Sencillo, Complejo, Muy complejo)
+    complexity_order = ['Sencillo', 'Complejo', 'Muy complejo'] # Asegúrate que estos textos coincidan con tus datos
+    existing_categories = [cat for cat in complexity_order if cat in complexity_counts['Complejidad'].unique()]
+
+    if existing_categories:
+         complexity_counts['Complejidad'] = pd.Categorical(complexity_counts['Complejidad'], categories=existing_categories, ordered=True)
+         complexity_counts = complexity_counts.sort_values('Complejidad')
+
+    # Mapeo de colores
+    color_map = {'Sencillo': '#4CAF50', 'Complejo': '#FFC107', 'Muy complejo': '#D32F2F'}
+
+    fig = px.pie(
+        complexity_counts,
+        names='Complejidad',
+        values='Conteo',
+        title="Percepción de Complejidad del Proceso de Recepción",
+        color='Complejidad',
+        color_discrete_map=color_map,
+        hole=0.4 # Para gráfico de dona (opcional)
+    )
+
+    fig.update_traces(textposition='inside', textinfo='percent+label', pull=[0.05 if cat == 'Muy complejo' else 0 for cat in complexity_counts['Complejidad']]) # Destacar "Muy complejo"
+
+    return fig
+
+
+def identify_problem_areas(df):
+    """
+    Identifica las áreas (preguntas de satisfacción) con menor satisfacción promedio.
+    """
+    satisfaction_cols = get_satisfaction_columns(df)
+    if not satisfaction_cols:
+        return pd.DataFrame() # Retornar df vacío si no hay columnas
+
+    # Calcular promedio para cada columna válida
+    col_means = {}
+    for col in satisfaction_cols:
+        # Asegurar que la columna es numérica antes de calcular la media
+        numeric_data = pd.to_numeric(df[col], errors='coerce')
+        if numeric_data.notna().any():
+             col_means[col] = numeric_data.mean()
+
+    if not col_means:
+         return pd.DataFrame() # Retornar df vacío si no se calcularon medias
+
+    # Crear DataFrame con promedios y descripciones
+    problem_df = pd.DataFrame(col_means.items(), columns=['Columna', 'Satisfacción Media'])
+    # Usar el mapeo COL_DESCRIPTIONS para obtener nombres legibles
+    problem_df['Aspecto'] = problem_df['Columna'].map(COL_DESCRIPTIONS).fillna(problem_df['Columna']) # Usar nombre de columna si no hay descripción
+
+    # Ordenar de menor a mayor satisfacción
+    problem_df = problem_df.sort_values('Satisfacción Media', ascending=True)
+
+    # Devolver los 5 peores (o menos si no hay tantos)
+    return problem_df[['Aspecto', 'Satisfacción Media']].head(5)
+
+
+def plot_satisfaction_trend(df):
+    """
+    Crea un gráfico de líneas para la tendencia de satisfacción promedio por mes y categoría.
+    """
+    if 'fecha' not in df.columns:
+        print("WARN plot_satisfaction_trend: Columna 'fecha' no encontrada.")
+        return None
+
+    # Asegurar que la fecha esté en formato datetime y eliminar NaNs
+    df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+    df_trend = df.dropna(subset=['fecha']).copy()
+
+    if df_trend.empty:
+        print("INFO plot_satisfaction_trend: No hay datos con fechas válidas.")
+        return None
+
+    # Crear columna de mes (Periodo)
+    df_trend['mes'] = df_trend['fecha'].dt.to_period('M')
+
+    # Obtener columnas de satisfacción válidas
+    satisfaction_cols = get_satisfaction_columns(df_trend)
+    if not satisfaction_cols:
+        print("INFO plot_satisfaction_trend: No hay columnas de satisfacción válidas.")
+        return None
+
+    # Calcular promedio por categoría y mes
+    trends_data = []
+    for category, cols_in_category in CATEGORIES.items():
+        # Usar solo las columnas de satisfacción válidas que pertenecen a esta categoría
+        valid_category_cols = [col for col in cols_in_category if col in satisfaction_cols]
+        if not valid_category_cols:
+            continue # Saltar si no hay columnas válidas para esta categoría
+
+        # Calcular promedio por fila para esta categoría
+        # Asegurar que las columnas sean numéricas aquí
+        for col in valid_category_cols:
+             df_trend[col] = pd.to_numeric(df_trend[col], errors='coerce')
+        df_trend[f'{category}_avg'] = df_trend[valid_category_cols].mean(axis=1, skipna=True)
+
+        # Agrupar por mes y calcular el promedio mensual de la categoría
+        # Usar dropna() antes de groupby para evitar error con tipos mixtos si hay NaNs en la columna de promedio
+        monthly_avg = df_trend.dropna(subset=['mes', f'{category}_avg']).groupby('mes')[f'{category}_avg'].mean().reset_index()
+        monthly_avg['Mes'] = monthly_avg['mes'].astype(str) # Convertir periodo a string para el eje X
+        monthly_avg['Categoría'] = category
+        monthly_avg.rename(columns={f'{category}_avg': 'Satisfacción Promedio'}, inplace=True)
+
+        trends_data.append(monthly_avg[['Mes', 'Satisfacción Promedio', 'Categoría']])
+
+    if not trends_data:
+        print("INFO plot_satisfaction_trend: No se pudieron calcular datos de tendencia.")
+        return None
+
+    trends_df = pd.concat(trends_data)
+
+    # Crear gráfico de líneas
+    fig = px.line(
+        trends_df,
+        x='Mes',
+        y='Satisfacción Promedio',
+        color='Categoría',
+        title="Tendencia de Satisfacción Promedio por Mes",
+        markers=True, # Añadir marcadores a los puntos
+        line_shape='spline', # Línea suavizada (opcional, puedes usar 'linear')
+        height=500
+    )
+
+    fig.update_layout(
+        xaxis_title="Mes",
+        yaxis_title="Promedio (1=Muy Insatisfecho, 5=Muy Satisfecho)",
+        yaxis_range=[1, 5] # Rango fijo para comparación
+    )
+
+    return fig
+
+# --- FIN FUNCIONES ---
