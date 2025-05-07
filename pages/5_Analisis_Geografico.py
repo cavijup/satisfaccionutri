@@ -1,10 +1,13 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from utils.data_loader import load_data, get_filtered_data
+# Eliminar 'get_filtered_data' de la importación
+from utils.data_loader import load_data
 from utils.data_processing import (
     get_satisfaction_columns,
-    CATEGORIES
+    # CATEGORIES, # Importar CATEGORIES si se usa aquí, o definirlo localmente
+    plot_geographic_satisfaction, # Importar la función para graficar
+    COL_DESCRIPTIONS # Importar descripciones
 )
 
 # Configuración de la página
@@ -17,164 +20,140 @@ st.set_page_config(
 # Título y descripción
 st.title("Análisis Geográfico de Satisfacción")
 st.markdown("""
-Esta sección presenta el análisis comparativo de la satisfacción por ubicación geográfica,
-enfocándose en el proceso de entrega de mercados.
+Esta sección presenta el análisis comparativo de la satisfacción promedio general por ubicación geográfica,
+basado en **todos los datos recolectados**.
 """)
 
-# Cargar datos
-df = load_data()
+# --- Carga de Datos ---
+# @st.cache_data(show_spinner="Cargando datos...") # No cachear aquí si Home.py ya lo hace
+def get_data():
+    df_page = load_data()
+    return df_page
 
-if df.empty:
-    st.error("No se pudieron cargar los datos. Verifica tus credenciales y la conexión a Google Sheets.")
+df = get_data() # Usar 'df' directamente
+
+if df is None or df.empty:
+    st.error("5_Analisis_Geografico.py: No se pudieron cargar los datos iniciales desde load_data().")
     st.stop()
 
-# Obtener los filtros de la página principal (si existen)
-date_range = None
+# --- Barra Lateral (Solo navegación y métrica total) ---
+st.sidebar.title("Navegación")
+st.sidebar.metric("Total de encuestas analizadas", len(df)) # Mostrar total de registros
 
-# Intentar obtener el rango de fechas del state
-if 'fecha' in df.columns:
-    df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
-    valid_dates = df.dropna(subset=['fecha'])
-    
-    if not valid_dates.empty:
-        min_date = valid_dates['fecha'].min().date()
-        max_date = valid_dates['fecha'].max().date()
-        
-        date_range = st.sidebar.date_input(
-            "Rango de fechas",
-            [min_date, max_date],
-            min_value=min_date,
-            max_value=max_date
-        )
+# --- SECCIÓN DE FILTROS ELIMINADA ---
+# Ya no se definen filtros específicos aquí, usamos el df completo
 
-# Aplicar filtros (sólo fecha, ya que aquí analizamos por ubicación)
-filtered_df = df.copy()
-
-if date_range and len(date_range) == 2 and 'fecha' in df.columns:
-    start_date, end_date = date_range
-    filtered_df = filtered_df[(filtered_df['fecha'].dt.date >= start_date) & 
-                              (filtered_df['fecha'].dt.date <= end_date)]
-
-# Mostrar número de encuestas filtradas
-st.sidebar.metric("Total de encuestas", len(filtered_df))
+# --- Contenido de la Página (Siempre usa 'df') ---
+print(f"INFO 5_Analisis_Geografico.py: Mostrando contenido con {len(df)} filas (sin filtros).")
 
 # Verificar variables geográficas disponibles
 geo_vars = []
-if 'comuna' in filtered_df.columns:
+if 'comuna' in df.columns and df['comuna'].notna().any(): # Verificar que la columna tenga datos
     geo_vars.append('comuna')
-if 'barrio' in filtered_df.columns:
+if 'barrio' in df.columns and df['barrio'].notna().any():
     geo_vars.append('barrio')
-if 'nodo' in filtered_df.columns:
+if 'nodo' in df.columns and df['nodo'].notna().any():
     geo_vars.append('nodo')
-if 'nicho' in filtered_df.columns:
-    geo_vars.append('nicho')
+# 'nicho' no estaba en tu archivo original, lo omito a menos que confirmes que existe
 
 if not geo_vars:
-    st.warning("No se encontraron variables geográficas en los datos.")
+    st.warning("No se encontraron variables geográficas con datos (comuna, barrio, nodo) para el análisis.")
     st.stop()
 
-# Establecer 'comuna' como la variable geográfica por defecto si está disponible
-selected_geo_var = 'comuna' if 'comuna' in geo_vars else geo_vars[0]
+# Selección de variable geográfica para analizar
+# Usar radio buttons o selectbox para que el usuario elija por qué variable agrupar
+selected_geo_var = st.selectbox(
+    "Seleccione la variable geográfica para el análisis:",
+    options=geo_vars,
+    format_func=lambda x: x.capitalize() # Mostrar nombres capitalizados
+)
 
-# Análisis del Proceso de Entrega por ubicación
-st.header(f"Satisfacción con Proceso de Entrega por {selected_geo_var}")
+st.header(f"Satisfacción Promedio General por {selected_geo_var.capitalize()}")
 
-# Obtener columnas del proceso de entrega
-entrega_cols = [col for col in filtered_df.columns if col.startswith(('23', '24', '25', '26', '27', '28'))]
-
-if not entrega_cols:
-    st.warning("No se encontraron datos del proceso de entrega en la encuesta.")
-else:
-    # Convertir columnas a numéricas
-    for col in entrega_cols:
-        filtered_df[col] = pd.to_numeric(filtered_df[col], errors='coerce')
-    
-    # Calcular satisfacción promedio con el proceso de entrega
-    filtered_df['satisfaccion_entrega'] = filtered_df[entrega_cols].mean(axis=1)
-    
-    # Agrupar por variable geográfica
-    geo_entrega_data = filtered_df.groupby(selected_geo_var)['satisfaccion_entrega'].agg(['mean', 'count']).reset_index()
-    geo_entrega_data.columns = [selected_geo_var, 'Satisfacción Promedio', 'Cantidad de Encuestas']
-    
-    # Ordenar por satisfacción promedio (descendente)
-    geo_entrega_data = geo_entrega_data.sort_values('Satisfacción Promedio', ascending=False)
-    
-    # Mostrar tabla
-    st.dataframe(geo_entrega_data, use_container_width=True)
-    
-    # Identificar ubicaciones con mayor y menor satisfacción
-    if len(geo_entrega_data) > 0:
-        best_location = geo_entrega_data.iloc[0]
-        worst_location = geo_entrega_data.iloc[-1]
-        
-        # Calcular satisfacción por aspecto específico del proceso de entrega
-        aspects_data = {}
-        
-        for col in entrega_cols:
-            # Obtener descripción amigable del aspecto
-            if col == '23ciclo_menus':
-                aspect_name = "Ciclo de menús"
-            elif col == '24notificacion_telefonica':
-                aspect_name = "Notificación telefónica"
-            elif col == '25tiempo_revision_alimentos':
-                aspect_name = "Tiempo de revisión"
-            elif col == '26tiempo_entrega_mercdos':
-                aspect_name = "Tiempo entre entregas"
-            elif col == '27tiempo_demora_proveedor':
-                aspect_name = "Tiempo de respuesta para reposiciones"
-            elif col == '28actitud_funcionario_logistico':
-                aspect_name = "Actitud del funcionario"
-            else:
-                aspect_name = col
-            
-            # Calcular promedios por ubicación para este aspecto
-            aspect_avg = filtered_df.groupby(selected_geo_var)[col].mean().to_dict()
-            aspects_data[aspect_name] = aspect_avg
-        
-        # Conclusiones y recomendaciones
-        st.header("Conclusiones y Recomendaciones")
-        
-        st.subheader("Análisis de Satisfacción por Ubicación")
-        st.markdown(f"""
-        Basado en el análisis del proceso de entrega por {selected_geo_var}, se observa que:
-        
-        - **{best_location[selected_geo_var]}** presenta la mayor satisfacción promedio con **{best_location['Satisfacción Promedio']:.2f}/5** (basado en {int(best_location['Cantidad de Encuestas'])} encuestas).
-        - **{worst_location[selected_geo_var]}** presenta la menor satisfacción promedio con **{worst_location['Satisfacción Promedio']:.2f}/5** (basado en {int(worst_location['Cantidad de Encuestas'])} encuestas).
-        """)
-        
-        # Análisis detallado de la ubicación con menor satisfacción
-        st.subheader(f"Análisis Detallado de {worst_location[selected_geo_var]}")
-        
-        # Encontrar los aspectos con menor satisfacción en la ubicación problemática
-        worst_location_aspects = {}
-        for aspect_name, avg_dict in aspects_data.items():
-            if worst_location[selected_geo_var] in avg_dict:
-                worst_location_aspects[aspect_name] = avg_dict[worst_location[selected_geo_var]]
-        
-        # Ordenar aspectos por satisfacción (de menor a mayor)
-        sorted_aspects = sorted(worst_location_aspects.items(), key=lambda x: x[1])
-        
-        # Mostrar los aspectos más problemáticos
-        if sorted_aspects:
-            st.markdown(f"Los aspectos con menor satisfacción en **{worst_location[selected_geo_var]}** son:")
-            
-            for aspect, score in sorted_aspects[:3]:  # Mostrar los 3 aspectos más problemáticos
-                st.markdown(f"- **{aspect}**: {score:.2f}/5")
-            
-            # Recomendaciones específicas
-            st.subheader("Recomendaciones")
-            st.markdown(f"""
-            Para mejorar la satisfacción en **{worst_location[selected_geo_var]}**, se recomienda:
-            
-            1. **Enfoque prioritario**: Concentrar recursos para mejorar "{sorted_aspects[0][0]}", que es el aspecto con menor satisfacción.
-            2. **Capacitación específica**: Proporcionar capacitación adicional al personal que atiende esta ubicación.
-            3. **Seguimiento directo**: Implementar un protocolo de seguimiento especial para esta ubicación.
-            4. **Comunicación mejorada**: Establecer canales de comunicación más efectivos con los beneficiarios.
-            5. **Aprendizaje de buenas prácticas**: Evaluar e implementar las prácticas exitosas observadas en **{best_location[selected_geo_var]}**.
-            
-            Estas acciones deberían ayudar a mejorar la satisfacción general con el proceso de entrega de mercados en las ubicaciones con menor desempeño.
-            """)
-        else:
-            st.info(f"No hay suficientes datos para analizar aspectos específicos en {worst_location[selected_geo_var]}.")
+# Graficar usando la función importada
+# La función plot_geographic_satisfaction calcula el promedio general
+try:
+    geo_fig = plot_geographic_satisfaction(df.copy(), selected_geo_var) # Pasar una copia por si la función modifica el df
+    if geo_fig:
+        st.plotly_chart(geo_fig, use_container_width=True)
     else:
-        st.info("No hay suficientes datos para generar conclusiones y recomendaciones.")
+        st.info(f"No hay suficientes datos para generar el gráfico por '{selected_geo_var}'.")
+except Exception as e_geo_plot:
+    st.error(f"Error al generar gráfico geográfico: {e_geo_plot}")
+    print(f"ERROR 5_Analisis_Geografico.py - plot_geographic_satisfaction: {e_geo_plot}")
+
+
+# --- Análisis de Mejor y Peor Ubicación (Basado en Satisfacción Promedio General) ---
+st.header(f"Análisis Detallado por {selected_geo_var.capitalize()}")
+
+# Necesitamos calcular el promedio general por ubicación aquí o usar una función que lo devuelva
+satisfaction_cols = get_satisfaction_columns(df)
+if not satisfaction_cols:
+    st.warning("No se encontraron columnas de satisfacción válidas para el análisis detallado.")
+else:
+    # Calcular promedio por fila
+    df_analysis = df.copy() # Trabajar sobre una copia
+    # Asegurarse que las columnas de satisfacción son numéricas
+    for col in satisfaction_cols:
+        df_analysis[col] = pd.to_numeric(df_analysis[col], errors='coerce')
+    df_analysis['satisfaccion_promedio_general'] = df_analysis[satisfaction_cols].mean(axis=1, skipna=True)
+
+    # Agrupar por la variable geográfica seleccionada
+    if selected_geo_var in df_analysis.columns and df_analysis[selected_geo_var].notna().any():
+        # Agrupar por string para evitar problemas con tipos mixtos
+        geo_stats = df_analysis.groupby(df_analysis[selected_geo_var].astype(str))['satisfaccion_promedio_general'].agg(['mean', 'count']).reset_index()
+        geo_stats.columns = [selected_geo_var, 'Satisfacción Promedio', 'Cantidad Encuestas']
+        geo_stats = geo_stats.dropna(subset=['Satisfacción Promedio']) # Eliminar grupos sin promedio calculable
+        geo_stats = geo_stats.sort_values('Satisfacción Promedio', ascending=False)
+
+        if len(geo_stats) > 0:
+            best_location = geo_stats.iloc[0]
+            worst_location = geo_stats.iloc[-1]
+
+            st.markdown(f"""
+            Análisis general de satisfacción por **{selected_geo_var.capitalize()}**:
+
+            - **Mejor Desempeño:** {best_location[selected_geo_var]} (Promedio: {best_location['Satisfacción Promedio']:.2f}/5, Encuestas: {int(best_location['Cantidad Encuestas'])})
+            - **Menor Desempeño:** {worst_location[selected_geo_var]} (Promedio: {worst_location['Satisfacción Promedio']:.2f}/5, Encuestas: {int(worst_location['Cantidad Encuestas'])})
+            """)
+
+            # --- Análisis Detallado de Aspectos en Peor Ubicación ---
+            st.subheader(f"Aspectos con Menor Satisfacción en: {worst_location[selected_geo_var]}")
+
+            # Filtrar el DataFrame original por la peor ubicación
+            df_worst_loc = df_analysis[df_analysis[selected_geo_var].astype(str) == worst_location[selected_geo_var]].copy()
+
+            # Calcular el promedio de cada columna de satisfacción SOLO para esa ubicación
+            aspect_means_worst = {}
+            for col in satisfaction_cols:
+                 # Asegurar que la columna es numérica
+                 numeric_col_worst = pd.to_numeric(df_worst_loc[col], errors='coerce')
+                 if numeric_col_worst.notna().any():
+                      aspect_means_worst[col] = numeric_col_worst.mean()
+
+            if aspect_means_worst:
+                 # Ordenar aspectos por satisfacción (menor a mayor)
+                 sorted_aspects_worst = sorted(aspect_means_worst.items(), key=lambda item: item[1])
+
+                 st.markdown("Principales áreas de mejora identificadas:")
+                 for col_key, score in sorted_aspects_worst[:3]: # Mostrar los 3 peores
+                      aspect_desc = COL_DESCRIPTIONS.get(col_key, col_key) # Obtener descripción
+                      st.markdown(f"- **{aspect_desc}:** {score:.2f}/5")
+
+                 st.markdown(f"""
+                 **Recomendaciones Específicas para {worst_location[selected_geo_var]}:**
+                 - Priorizar acciones de mejora en los aspectos listados arriba.
+                 - Realizar seguimiento focalizado en esta ubicación.
+                 - Comparar prácticas con {best_location[selected_geo_var]} para identificar oportunidades.
+                 """)
+            else:
+                 st.info(f"No hay suficientes datos para detallar aspectos específicos en {worst_location[selected_geo_var]}.")
+
+        else:
+            st.info(f"No hay suficientes datos agrupados por '{selected_geo_var}' para realizar el análisis comparativo.")
+    else:
+        st.info(f"La columna '{selected_geo_var}' no tiene datos válidos para agrupar.")
+
+# --- Footer ---
+st.markdown("---")
+st.markdown("Dashboard de Análisis de la Encuesta de Satisfacción | Sección: Análisis Geográfico")
