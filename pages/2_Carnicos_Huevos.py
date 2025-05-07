@@ -1,10 +1,9 @@
 import streamlit as st
 import pandas as pd
-# Eliminar 'get_filtered_data' de la importación
-from utils.data_loader import load_data
+from utils.data_loader import load_data, get_filtered_data
 from utils.data_processing import (
     plot_question_satisfaction,
-    COL_DESCRIPTIONS # Asegúrate que COL_DESCRIPTIONS esté definido en data_processing.py
+    COL_DESCRIPTIONS
 )
 
 # Configuración de la página
@@ -18,237 +17,282 @@ st.set_page_config(
 st.title("Análisis de Satisfacción - Cárnicos y Huevos")
 st.markdown("""
 Esta sección presenta el análisis detallado de la satisfacción con los cárnicos (cerdo y pollo) y huevos entregados,
-incluyendo aspectos como etiquetado, estado de congelación, corte y empaque, basado en **todos los datos recolectados**.
+incluyendo aspectos como etiquetado, estado de congelación, corte y empaque.
 """)
 
 # Cargar datos
-# @st.cache_data(show_spinner="Cargando datos...") # No cachear aquí si Home.py ya lo hace
-def get_data():
-    df_page = load_data()
-    return df_page
+df = load_data()
 
-df = get_data() # Usar 'df' directamente
-
-if df is None or df.empty:
-    st.error("2_Carnicos_Huevos.py: No se pudieron cargar los datos iniciales desde load_data().")
+if df.empty:
+    st.error("No se pudieron cargar los datos. Verifica tus credenciales y la conexión a Google Sheets.")
     st.stop()
 
-# --- Barra Lateral (Solo navegación y métrica total) ---
-st.sidebar.title("Navegación")
-# st.sidebar.info("...") # Puedes añadir información aquí si quieres
-st.sidebar.metric("Total de encuestas analizadas", len(df)) # Mostrar total de registros
+# Obtener los filtros de la página principal (si existen)
+date_range = None
+selected_comuna = None
+selected_barrio = None
+selected_nodo = None
 
-# --- SECCIÓN DE FILTROS ELIMINADA ---
-# Ya no se definen los widgets de filtro aquí
-# Ya no se llama a get_filtered_data
+# Intentar obtener el rango de fechas del state
+if 'fecha' in df.columns:
+    df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+    valid_dates = df.dropna(subset=['fecha'])
+    
+    if not valid_dates.empty:
+        min_date = valid_dates['fecha'].min().date()
+        max_date = valid_dates['fecha'].max().date()
+        
+        date_range = st.sidebar.date_input(
+            "Rango de fechas",
+            [min_date, max_date],
+            min_value=min_date,
+            max_value=max_date
+        )
 
-# --- Contenido de la Página (Siempre usa 'df') ---
-print(f"INFO 2_Carnicos_Huevos.py: Mostrando contenido con {len(df)} filas (sin filtros).")
+# Filtro por ubicación geográfica
+if 'comuna' in df.columns:
+    all_comunas = ["Todas"] + sorted([str(x) for x in df['comuna'].unique() if pd.notna(x)])
+    selected_comuna = st.sidebar.selectbox("Comuna", all_comunas)
+
+if 'barrio' in df.columns:
+    all_barrios = ["Todos"] + sorted([str(x) for x in df['barrio'].unique() if pd.notna(x)])
+    selected_barrio = st.sidebar.selectbox("Barrio", all_barrios)
+
+if 'nodo' in df.columns:
+    all_nodos = ["Todos"] + sorted([str(x) for x in df['nodo'].unique() if pd.notna(x)])
+    selected_nodo = st.sidebar.selectbox("Nodo", all_nodos)
+
+# Aplicar filtros
+filtered_df = get_filtered_data(df, date_range, selected_comuna, selected_barrio, selected_nodo)
+
+# Mostrar número de encuestas filtradas
+st.sidebar.metric("Total de encuestas filtradas", len(filtered_df))
 
 # Mapeo de las columnas de cárnicos y huevos
-# Usar COL_DESCRIPTIONS importado de data_processing
-carnicos_huevos_cols_map = {
-    '12carnes_bien_etiquetadas': COL_DESCRIPTIONS.get('12carnes_bien_etiquetadas', 'Etiquetado carnes'),
-    '13producto_congelado': COL_DESCRIPTIONS.get('13producto_congelado', 'Producto congelado'),
-    '14corte_recibido': COL_DESCRIPTIONS.get('14corte_recibido', 'Corte recibido'),
-    '15fecha_vencimiento_adecuada': COL_DESCRIPTIONS.get('15fecha_vencimiento_adecuada', 'Fecha vencimiento adecuada'),
-    '16empacado_al_vacio': COL_DESCRIPTIONS.get('16empacado_al_vacio', 'Empacado al vacío'),
-    '17estado_huevo': COL_DESCRIPTIONS.get('17estado_huevo', 'Estado huevos'),
-    '18panal_de_huevo_etiquetado': COL_DESCRIPTIONS.get('18panal_de_huevo_etiquetado', 'Etiquetado panal huevos')
+carnicos_cols = {
+    '12carnes_bien_etiquetadas': 'Las carnes se encuentran bien etiquetadas (peso, fechas, tipo de corte)',
+    '13producto_congelado': 'El producto se encuentra congelado al momento de recibirlo',
+    '14corte_recibido': 'El corte del producto recibido es el mismo que aparece en la etiqueta',
+    '15fecha_vencimiento_adecuada': 'La fecha de vencimiento es adecuada para la preparación',
+    '16empacado_al_vacio': 'El producto está empacado al vacío',
+    '17estado_huevo': 'Estado de los huevos recibidos',
+    '18panal_de_huevo_etiquetado': 'El panal de huevos se encuentra etiquetado con fecha vencimiento'
 }
 
-
 # Análisis de satisfacción por pregunta
-st.header("Satisfacción con Cárnicos y Huevos (Global)")
+st.header("Satisfacción con Cárnicos y Huevos")
 
-# Comprobar si existen las columnas y tienen datos válidos
-valid_display_cols = []
-for col_key in carnicos_huevos_cols_map.keys():
-    label_col = col_key + '_label'
-    if label_col in df.columns and df[label_col].notna().any():
-        valid_display_cols.append(col_key)
-    elif col_key in df.columns and pd.api.types.is_numeric_dtype(df[col_key].dtype) and df[col_key].notna().any():
-        valid_display_cols.append(col_key)
-        print(f"WARN 2_Carnicos_Huevos.py: Usando columna numérica '{col_key}' porque '{label_col}' falta o está vacía.")
+# Comprobar si existen las columnas
+available_cols = [col for col in carnicos_cols.keys() if col in filtered_df.columns]
 
-if not valid_display_cols:
-    st.warning("No se encontraron datos de satisfacción válidos para Cárnicos y Huevos.")
+if not available_cols:
+    st.warning("No se encontraron datos de satisfacción con cárnicos y huevos en la encuesta.")
     st.stop()
 
 # Crear tabs para diferentes categorías
 carnes_tab, huevos_tab = st.tabs(["Cárnicos", "Huevos"])
 
 # Columnas de cárnicos
-carnes_cols_keys = ['12carnes_bien_etiquetadas', '13producto_congelado', '14corte_recibido',
-                   '15fecha_vencimiento_adecuada', '16empacado_al_vacio']
-carnes_available = [col for col in carnes_cols_keys if col in valid_display_cols]
+carnes_cols = ['12carnes_bien_etiquetadas', '13producto_congelado', '14corte_recibido', 
+               '15fecha_vencimiento_adecuada', '16empacado_al_vacio']
+carnes_available = [col for col in carnes_cols if col in available_cols]
 
 with carnes_tab:
     if carnes_available:
         st.subheader("Satisfacción con Cárnicos")
-        num_cols_carnes = 2
-        cols_layout_carnes = st.columns(num_cols_carnes)
-        col_index_carnes = 0
-        for col_key in carnes_available:
-            col_description = carnicos_huevos_cols_map[col_key]
-            with cols_layout_carnes[col_index_carnes % num_cols_carnes]:
-                try:
-                    # Usar el DataFrame completo 'df'
-                    fig = plot_question_satisfaction(df, col_key, col_description)
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info(f"No hay datos suficientes para '{col_description}'")
-                except Exception as e_plot:
-                     st.error(f"Error al graficar '{col_description}': {e_plot}")
-                     print(f"ERROR 2_Carnicos_Huevos.py - plot_question_satisfaction para '{col_key}': {e_plot}")
-            col_index_carnes += 1
+        
+        # Mostrar gráficos en grid
+        for i in range(0, len(carnes_available), 2):
+            col1, col2 = st.columns(2)
+            
+            # Primera columna
+            fig1 = plot_question_satisfaction(filtered_df, carnes_available[i], carnicos_cols[carnes_available[i]])
+            if fig1:
+                col1.plotly_chart(fig1, use_container_width=True)
+            else:
+                col1.info(f"No hay datos suficientes para '{carnicos_cols[carnes_available[i]]}'")
+            
+            # Segunda columna (si existe)
+            if i + 1 < len(carnes_available):
+                fig2 = plot_question_satisfaction(filtered_df, carnes_available[i+1], carnicos_cols[carnes_available[i+1]])
+                if fig2:
+                    col2.plotly_chart(fig2, use_container_width=True)
+                else:
+                    col2.info(f"No hay datos suficientes para '{carnicos_cols[carnes_available[i+1]]}'")
     else:
-        st.info("No se encontraron datos de satisfacción con cárnicos.")
+        st.info("No se encontraron datos de satisfacción con cárnicos en la encuesta.")
 
 # Columnas de huevos
-huevos_cols_keys = ['17estado_huevo', '18panal_de_huevo_etiquetado']
-huevos_available = [col for col in huevos_cols_keys if col in valid_display_cols]
+huevos_cols = ['17estado_huevo', '18panal_de_huevo_etiquetado']
+huevos_available = [col for col in huevos_cols if col in available_cols]
 
 with huevos_tab:
     if huevos_available:
         st.subheader("Satisfacción con Huevos")
-        num_cols_huevos = 2
-        cols_layout_huevos = st.columns(num_cols_huevos)
-        col_index_huevos = 0
-        for col_key in huevos_available:
-            col_description = carnicos_huevos_cols_map[col_key]
-            with cols_layout_huevos[col_index_huevos % num_cols_huevos]:
-                try:
-                     # Usar el DataFrame completo 'df'
-                    fig = plot_question_satisfaction(df, col_key, col_description)
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info(f"No hay datos suficientes para '{col_description}'")
-                except Exception as e_plot:
-                     st.error(f"Error al graficar '{col_description}': {e_plot}")
-                     print(f"ERROR 2_Carnicos_Huevos.py - plot_question_satisfaction para '{col_key}': {e_plot}")
-            col_index_huevos += 1
+        
+        # Mostrar gráficos en columnas
+        col1, col2 = st.columns(2)
+        
+        # Primera columna (si existe)
+        if len(huevos_available) > 0:
+            fig1 = plot_question_satisfaction(filtered_df, huevos_available[0], carnicos_cols[huevos_available[0]])
+            if fig1:
+                col1.plotly_chart(fig1, use_container_width=True)
+            else:
+                col1.info(f"No hay datos suficientes para '{carnicos_cols[huevos_available[0]]}'")
+        
+        # Segunda columna (si existe)
+        if len(huevos_available) > 1:
+            fig2 = plot_question_satisfaction(filtered_df, huevos_available[1], carnicos_cols[huevos_available[1]])
+            if fig2:
+                col2.plotly_chart(fig2, use_container_width=True)
+            else:
+                col2.info(f"No hay datos suficientes para '{carnicos_cols[huevos_available[1]]}'")
     else:
-        st.info("No se encontraron datos de satisfacción con huevos.")
+        st.info("No se encontraron datos de satisfacción con huevos en la encuesta.")
 
 # Análisis de Comedores con Insatisfacción
-st.header("Comedores con Niveles de Insatisfacción (Global)")
+st.header("Comedores con Niveles de Insatisfacción")
 
-# Verificar columnas necesarias
-id_comedor_candidates = ['nombre_comedor', 'comedor', 'id_comedor', 'nombre del comedor']
-id_comedor_col = next((col for col in id_comedor_candidates if col in df.columns), None)
-# Usar las columnas que son numéricas después del procesamiento
-satisfaction_numeric_cols = [col for col in carnicos_huevos_cols_map.keys() if col in df.columns and pd.api.types.is_numeric_dtype(df[col])]
+# Verificar que existan las columnas de satisfacción y la columna de identificación del comedor
+satisfaccion_cols = [col for col in carnicos_cols.keys() if col in filtered_df.columns]
+id_comedor_col = next((col for col in ['nombre_comedor', 'comedor', 'id_comedor'] if col in filtered_df.columns), None)
 
-
-if not satisfaction_numeric_cols:
-    st.warning("No se encontraron datos numéricos de satisfacción con cárnicos/huevos para analizar.")
+if not satisfaccion_cols:
+    st.warning("No se encontraron datos de satisfacción con cárnicos y huevos en la encuesta.")
 elif not id_comedor_col:
-    st.warning("No se encontró columna de identificación del comedor.")
+    st.warning("No se encontró columna de identificación del comedor comunitario.")
 else:
-    print(f"DEBUG 2_Carnicos_Huevos.py: Analizando insatisfacción (global). ID Comedor: '{id_comedor_col}', Columnas numéricas: {satisfaction_numeric_cols}")
-    try:
-        # Usar el DataFrame completo 'df'
-        analisis_df = df[[id_comedor_col] + satisfaction_numeric_cols].copy()
-        for col in satisfaction_numeric_cols:
-            analisis_df[col] = pd.to_numeric(analisis_df[col], errors='coerce')
-
-        # Función para identificar valores de insatisfacción (puntaje <= 2)
-        def es_insatisfecho_numeric(valor):
-             if pd.isna(valor): return False
-             return valor <= 2
-
-        # Identificar filas con insatisfacción
-        # Aplicar a cada columna numérica y ver si alguna es True para la fila
-        insatisfaccion_mask = analisis_df[satisfaction_numeric_cols].apply(lambda row: row.apply(es_insatisfecho_numeric).any(), axis=1)
-
-
-        if not insatisfaccion_mask.any():
-            st.success("No se encontraron reportes de insatisfacción (puntaje <= 2) para Cárnicos/Huevos.")
-        else:
-            insatisfechos_df = analisis_df[insatisfaccion_mask]
-            print(f"DEBUG 2_Carnicos_Huevos.py: {len(insatisfechos_df)} filas totales con insatisfacción.")
-
-            # Crear tabla resumen
-            comedor_insatisfaccion_detalle = {}
-            for idx, row in insatisfechos_df.iterrows():
-                comedor_nombre = row[id_comedor_col]
-                if comedor_nombre not in comedor_insatisfaccion_detalle:
-                    comedor_insatisfaccion_detalle[comedor_nombre] = {'count': 0, 'aspects': set()}
-                comedor_insatisfaccion_detalle[comedor_nombre]['count'] += 1
-                for col in satisfaction_numeric_cols:
-                    if es_insatisfecho_numeric(row[col]):
-                        comedor_insatisfaccion_detalle[comedor_nombre]['aspects'].add(carnicos_huevos_cols_map.get(col, col))
-
-            # Convertir a DataFrame para mostrar
-            resultado_lista = []
-            for comedor, data in comedor_insatisfaccion_detalle.items():
-                resultado_lista.append({
-                    'Comedor': comedor,
-                    'Número de Reportes con Insatisfacción': data['count'],
-                    'Aspectos Problemáticos': ', '.join(sorted(list(data['aspects'])))
-                })
-
-            if resultado_lista:
-                resultado_display_df = pd.DataFrame(resultado_lista)
-                st.write("Comedores con al menos un reporte de insatisfacción (puntaje <= 2) en Cárnicos/Huevos (Global):")
-                st.dataframe(resultado_display_df.sort_values('Número de Reportes con Insatisfacción', ascending=False),
-                             hide_index=True, use_container_width=True)
-            else: # Esto no debería ocurrir si insatisfaccion_mask.any() fue True, pero por seguridad
-                 st.success("No se encontraron reportes de insatisfacción (puntaje <= 2) para Cárnicos/Huevos.")
-
-
-    except Exception as e_insat:
-        st.error(f"Error analizando comedores insatisfechos: {e_insat}")
-        print(f"ERROR 2_Carnicos_Huevos.py - Análisis Insatisfacción: {e_insat}")
-
+    # Crear dataframe para análisis
+    analisis_df = filtered_df.copy()
+    
+    # Función para identificar valores de insatisfacción
+    def es_insatisfecho(valor):
+        if pd.isna(valor):
+            return False
+        
+        # Si es numérico, considerar valores menores o iguales a 2 como insatisfacción
+        if isinstance(valor, (int, float)):
+            return valor <= 2
+        
+        # Si es texto, buscar las palabras clave
+        valor_str = str(valor).upper()
+        return "INSATISFECHO" in valor_str or "MUY INSATISFECHO" in valor_str
+    
+    # Identificar comedores con insatisfacción
+    comedores_insatisfechos = {}
+    
+    for col in satisfaccion_cols:
+        # Filtrar filas con insatisfacción
+        insatisfaccion_mask = analisis_df[col].apply(es_insatisfecho)
+        
+        if insatisfaccion_mask.any():
+            # Agrupar por comedor y contar insatisfacciones
+            insatisfacciones = analisis_df[insatisfaccion_mask].groupby(id_comedor_col).size()
+            
+            # Almacenar resultados
+            for comedor, count in insatisfacciones.items():
+                if comedor not in comedores_insatisfechos:
+                    comedores_insatisfechos[comedor] = {}
+                
+                comedores_insatisfechos[comedor][carnicos_cols[col]] = count
+    
+    # Mostrar resultados
+    if comedores_insatisfechos:
+        # Convertir a DataFrame para mejor visualización
+        resultado_df = pd.DataFrame.from_dict(comedores_insatisfechos, orient='index')
+        
+        # Reemplazar NaN con 0
+        resultado_df = resultado_df.fillna(0)
+        
+        # Agregar columna de total
+        resultado_df['Total Insatisfacciones'] = resultado_df.sum(axis=1)
+        
+        # Ordenar por total de insatisfacciones (descendente)
+        resultado_df = resultado_df.sort_values('Total Insatisfacciones', ascending=False)
+        
+        # Mostrar como tabla
+        st.write("Comedores con reportes de insatisfacción en cárnicos y huevos:")
+        st.dataframe(resultado_df, use_container_width=True)
+        
+        # Conclusión textual sobre comedores con insatisfacciones
+        st.subheader("Comedores con problemas de insatisfacción")
+        
+        # Tomar los primeros comedores (los más problemáticos)
+        top_comedores = resultado_df.head(5)
+        
+        # Crear conclusión textual
+        st.markdown("### Resumen de hallazgos")
+        
+        # Texto introductorio
+        st.markdown(f"""
+        Se han identificado **{len(resultado_df)}** comedores comunitarios que presentan reportes 
+        de insatisfacción con los cárnicos y huevos entregados. A continuación se detallan los comedores 
+        con mayores niveles de insatisfacción:
+        """)
+        
+        # Lista de comedores problemáticos
+        for comedor, row in top_comedores.iterrows():
+            # Obtener los aspectos con insatisfacción para este comedor
+            aspectos_insatisfechos = []
+            for aspecto, valor in row.items():
+                if aspecto != 'Total Insatisfacciones' and valor > 0:
+                    aspectos_insatisfechos.append(aspecto)
+            
+            aspectos_texto = ", ".join(aspectos_insatisfechos)
+            st.markdown(f"""
+            - **{comedor}**: {int(row['Total Insatisfacciones'])} reportes de insatisfacción.
+              Aspectos problemáticos: {aspectos_texto}
+            """)
+        
+        # Recomendaciones generales
+        st.markdown("""
+        ### Recomendaciones
+        
+        Se sugiere implementar un plan de seguimiento especial para estos comedores, 
+        con énfasis en los aspectos señalados como problemáticos. Es recomendable:
+        
+        1. Revisar con los proveedores de cárnicos los estándares de calidad, especialmente para estos comedores
+        2. Verificar la cadena de frío durante el transporte a estas ubicaciones
+        3. Implementar un protocolo de inspección especial para los productos destinados a estos comedores
+        4. Realizar seguimiento a la calidad de los huevos, verificando su frescura y correcto etiquetado
+        """)
+    else:
+        st.success("No se encontraron comedores con reportes de insatisfacción en cárnicos y huevos.")
 
 # Conclusiones y recomendaciones
-st.header("Conclusiones y Recomendaciones (Global - Cárnicos y Huevos)")
+st.header("Conclusiones y Recomendaciones")
 
-# Usar 'valid_display_cols' que ya verificó si hay datos
-if valid_display_cols:
-    try:
-        # Calcular promedios de satisfacción usando el df completo
-        satisfaction_means = {}
-        valid_cols_for_mean = [col for col in carnicos_huevos_cols_map.keys() if col in df.columns and pd.api.types.is_numeric_dtype(df[col])]
-
-        if valid_cols_for_mean:
-             for col in valid_cols_for_mean:
-                 numeric_data = pd.to_numeric(df[col], errors='coerce')
-                 if numeric_data.notna().any():
-                     satisfaction_means[col] = numeric_data.mean()
-
-        if satisfaction_means:
-             min_aspect_col = min(satisfaction_means, key=satisfaction_means.get)
-             min_score = satisfaction_means[min_aspect_col]
-             max_aspect_col = max(satisfaction_means, key=satisfaction_means.get)
-             max_score = satisfaction_means[max_aspect_col]
-
-             min_desc = carnicos_huevos_cols_map.get(min_aspect_col, min_aspect_col)
-             max_desc = carnicos_huevos_cols_map.get(max_aspect_col, max_aspect_col)
-
-             st.markdown(f"""
-             Basado en el análisis de **todos** los datos:
-
-             - El aspecto con **mayor satisfacción** global es "{max_desc}" ({max_score:.2f}/5).
-             - El aspecto con **menor satisfacción** global es "{min_desc}" ({min_score:.2f}/5).
-
-             **Recomendaciones Generales:**
-             - Investigar las causas de la menor satisfacción en "{min_desc}".
-             - Reforzar las prácticas relacionadas con "{max_desc}".
-             - Fortalecer controles de calidad y cadena de frío para cárnicos y huevos.
-             """)
-        else:
-             st.info("No hay datos numéricos de satisfacción suficientes para generar conclusiones.")
-    except Exception as e_conclu:
-        st.error(f"Error generando conclusiones: {e_conclu}")
-        print(f"ERROR 2_Carnicos_Huevos.py - Conclusiones: {e_conclu}")
+# Análisis automático basado en los datos
+if available_cols:
+    # Calcular promedios de satisfacción
+    satisfaction_means = {}
+    for col in available_cols:
+        satisfaction_means[col] = filtered_df[col].mean()
+    
+    # Identificar el aspecto con menor satisfacción
+    min_aspect = min(satisfaction_means, key=satisfaction_means.get)
+    min_score = satisfaction_means[min_aspect]
+    
+    # Identificar el aspecto con mayor satisfacción
+    max_aspect = max(satisfaction_means, key=satisfaction_means.get)
+    max_score = satisfaction_means[max_aspect]
+    
+    # Mostrar conclusiones
+    st.markdown(f"""
+    Basado en el análisis de los datos:
+    
+    - El aspecto con **mayor satisfacción** es "{carnicos_cols[max_aspect]}" con un puntaje promedio de **{max_score:.2f}/5**.
+    - El aspecto con **menor satisfacción** es "{carnicos_cols[min_aspect]}" con un puntaje promedio de **{min_score:.2f}/5**.
+    
+    **Recomendaciones:**
+    
+    - Revisar los procesos relacionados con "{carnicos_cols[min_aspect]}"
+    - Fortalecer los controles de calidad para cárnicos y huevos
+    - Evaluar la posibilidad de cambiar proveedores si los problemas persisten
+    """)
 else:
-    # Esto se maneja arriba con st.warning si no hay 'valid_display_cols'
-    pass
+    st.info("No hay datos suficientes para generar conclusiones y recomendaciones.")
 
 # Footer
 st.markdown("---")

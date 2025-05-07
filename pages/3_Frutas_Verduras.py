@@ -1,10 +1,9 @@
 import streamlit as st
 import pandas as pd
-# Eliminar 'get_filtered_data' de la importación
-from utils.data_loader import load_data
+from utils.data_loader import load_data, get_filtered_data
 from utils.data_processing import (
     plot_question_satisfaction,
-    COL_DESCRIPTIONS # Asegúrate que COL_DESCRIPTIONS esté definido en data_processing.py
+    COL_DESCRIPTIONS
 )
 
 # Configuración de la página
@@ -18,208 +17,269 @@ st.set_page_config(
 st.title("Análisis de Satisfacción - Frutas y Verduras")
 st.markdown("""
 Esta sección presenta el análisis detallado de la satisfacción con las frutas, verduras, hortalizas y tubérculos entregados,
-incluyendo aspectos como frescura, maduración, calidad y estado de los productos, basado en **todos los datos recolectados**.
+incluyendo aspectos como frescura, maduración, calidad y estado de los productos.
 """)
 
-# --- Carga de Datos ---
-# @st.cache_data(show_spinner="Cargando datos...") # No cachear aquí si Home.py ya lo hace
-def get_data():
-    df_page = load_data()
-    return df_page
+# Cargar datos
+df = load_data()
 
-df = get_data() # Usar 'df' directamente
-
-if df is None or df.empty:
-    st.error("3_Frutas_Verduras.py: No se pudieron cargar los datos iniciales desde load_data().")
+if df.empty:
+    st.error("No se pudieron cargar los datos. Verifica tus credenciales y la conexión a Google Sheets.")
     st.stop()
 
-# --- Barra Lateral (Solo navegación y métrica total) ---
-st.sidebar.title("Navegación")
-st.sidebar.metric("Total de encuestas analizadas", len(df)) # Mostrar total de registros
+# Obtener los filtros de la página principal (si existen)
+date_range = None
+selected_comuna = None
+selected_barrio = None
+selected_nodo = None
 
-# --- SECCIÓN DE FILTROS ELIMINADA ---
+# Intentar obtener el rango de fechas del state
+if 'fecha' in df.columns:
+    df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+    valid_dates = df.dropna(subset=['fecha'])
+    
+    if not valid_dates.empty:
+        min_date = valid_dates['fecha'].min().date()
+        max_date = valid_dates['fecha'].max().date()
+        
+        date_range = st.sidebar.date_input(
+            "Rango de fechas",
+            [min_date, max_date],
+            min_value=min_date,
+            max_value=max_date
+        )
 
-# --- Contenido de la Página (Siempre usa 'df') ---
-print(f"INFO 3_Frutas_Verduras.py: Mostrando contenido con {len(df)} filas (sin filtros).")
+# Filtro por ubicación geográfica
+if 'comuna' in df.columns:
+    all_comunas = ["Todas"] + sorted([str(x) for x in df['comuna'].unique() if pd.notna(x)])
+    selected_comuna = st.sidebar.selectbox("Comuna", all_comunas)
+
+if 'barrio' in df.columns:
+    all_barrios = ["Todos"] + sorted([str(x) for x in df['barrio'].unique() if pd.notna(x)])
+    selected_barrio = st.sidebar.selectbox("Barrio", all_barrios)
+
+if 'nodo' in df.columns:
+    all_nodos = ["Todos"] + sorted([str(x) for x in df['nodo'].unique() if pd.notna(x)])
+    selected_nodo = st.sidebar.selectbox("Nodo", all_nodos)
+
+# Aplicar filtros
+filtered_df = get_filtered_data(df, date_range, selected_comuna, selected_barrio, selected_nodo)
+
+# Mostrar número de encuestas filtradas
+st.sidebar.metric("Total de encuestas filtradas", len(filtered_df))
 
 # Mapeo de las columnas de frutas y verduras
-# Usar COL_DESCRIPTIONS importado de data_processing
-frutas_verduras_cols_map = {
-    '19frutas': COL_DESCRIPTIONS.get('19frutas', 'Estado y calidad de las frutas'),
-    '20verduras': COL_DESCRIPTIONS.get('20verduras', 'Estado y calidad de las verduras'),
-    '21hortalizas': COL_DESCRIPTIONS.get('21hortalizas', 'Estado y calidad de las hortalizas'),
-    '22tuberculos': COL_DESCRIPTIONS.get('22tuberculos', 'Estado y calidad de los tubérculos')
+frutas_verduras_cols = {
+    '19frutas': 'Estado y calidad de las frutas recibidas',
+    '20verduras': 'Estado y calidad de las verduras recibidas',
+    '21hortalizas': 'Estado y calidad de las hortalizas recibidas',
+    '22tuberculos': 'Estado y calidad de los tubérculos recibidos'
 }
 
 # Análisis de satisfacción por pregunta
-st.header("Satisfacción con Frutas y Verduras (Global)")
+st.header("Satisfacción con Frutas y Verduras")
 
-# Comprobar si existen las columnas y tienen datos válidos
-valid_display_cols = []
-for col_key in frutas_verduras_cols_map.keys():
-    label_col = col_key + '_label'
-    if label_col in df.columns and df[label_col].notna().any():
-        valid_display_cols.append(col_key)
-    elif col_key in df.columns and pd.api.types.is_numeric_dtype(df[col_key].dtype) and df[col_key].notna().any():
-        valid_display_cols.append(col_key)
-        print(f"WARN 3_Frutas_Verduras.py: Usando columna numérica '{col_key}' porque '{label_col}' falta o está vacía.")
+# Comprobar si existen las columnas
+available_cols = [col for col in frutas_verduras_cols.keys() if col in filtered_df.columns]
 
-if not valid_display_cols:
-    st.warning("No se encontraron datos de satisfacción válidos para Frutas y Verduras.")
+if not available_cols:
+    st.warning("No se encontraron datos de satisfacción con frutas y verduras en la encuesta.")
     st.stop()
 
-# Crear tabs para diferentes categorías (si quieres mantenerlas)
-# O mostrarlos directamente si prefieres
-frutas_tab, verduras_tab, hortalizas_tab, tuberculos_tab = st.tabs(["Frutas", "Verduras", "Hortalizas", "Tubérculos"])
+# Crear tabs para diferentes categorías
+frutas_tab, verduras_tab = st.tabs(["Frutas", "Verduras y Hortalizas"])
 
-# Columnas por tab
-tabs_cols = {
-    frutas_tab: ['19frutas'],
-    verduras_tab: ['20verduras'],
-    hortalizas_tab: ['21hortalizas'],
-    tuberculos_tab: ['22tuberculos']
-}
+# Definir las columnas para cada pestaña
+frutas_cols = ['19frutas']
+verduras_tuberculos_cols = ['20verduras', '21hortalizas', '22tuberculos']
 
-for tab, cols_keys in tabs_cols.items():
-    with tab:
-        tab_available_cols = [col for col in cols_keys if col in valid_display_cols]
-        if tab_available_cols:
-            # st.subheader(f"Satisfacción con {tab.label}") # El título del tab ya lo indica
-            num_cols_tab = 1 # Mostrar un gráfico por tab en este caso
-            cols_layout_tab = st.columns(num_cols_tab)
-            col_index_tab = 0
-            for col_key in tab_available_cols:
-                col_description = frutas_verduras_cols_map[col_key]
-                with cols_layout_tab[col_index_tab % num_cols_tab]:
-                    try:
-                         # Usar el DataFrame completo 'df'
-                        fig = plot_question_satisfaction(df, col_key, col_description)
-                        if fig:
-                            st.plotly_chart(fig, use_container_width=True)
-                        else:
-                            st.info(f"No hay datos suficientes para '{col_description}'")
-                    except Exception as e_plot:
-                        st.error(f"Error al graficar '{col_description}': {e_plot}")
-                        print(f"ERROR 3_Frutas_Verduras.py - plot_question_satisfaction para '{col_key}': {e_plot}")
-                col_index_tab += 1
-        else:
-            st.info(f"No se encontraron datos de satisfacción para esta categoría.")
+# Obtener columnas disponibles para cada categoría
+frutas_available = [col for col in frutas_cols if col in available_cols]
+verduras_tuberculos_available = [col for col in verduras_tuberculos_cols if col in available_cols]
 
+with frutas_tab:
+    if frutas_available:
+        st.subheader("Satisfacción con Frutas")
+        
+        # Mostrar gráficos para frutas
+        for col in frutas_available:
+            fig = plot_question_satisfaction(filtered_df, col, frutas_verduras_cols[col])
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info(f"No hay datos suficientes para '{frutas_verduras_cols[col]}'")
+    else:
+        st.info("No se encontraron datos de satisfacción con frutas en la encuesta.")
+
+with verduras_tab:
+    if verduras_tuberculos_available:
+        st.subheader("Satisfacción con Verduras, Hortalizas y Tubérculos")
+        
+        # Mostrar gráficos en grid
+        for i in range(0, len(verduras_tuberculos_available), 2):
+            col1, col2 = st.columns(2)
+            
+            # Primera columna
+            fig1 = plot_question_satisfaction(filtered_df, verduras_tuberculos_available[i], frutas_verduras_cols[verduras_tuberculos_available[i]])
+            if fig1:
+                col1.plotly_chart(fig1, use_container_width=True)
+            else:
+                col1.info(f"No hay datos suficientes para '{frutas_verduras_cols[verduras_tuberculos_available[i]]}'")
+            
+            # Segunda columna (si existe)
+            if i + 1 < len(verduras_tuberculos_available):
+                fig2 = plot_question_satisfaction(filtered_df, verduras_tuberculos_available[i+1], frutas_verduras_cols[verduras_tuberculos_available[i+1]])
+                if fig2:
+                    col2.plotly_chart(fig2, use_container_width=True)
+                else:
+                    col2.info(f"No hay datos suficientes para '{frutas_verduras_cols[verduras_tuberculos_available[i+1]]}'")
+    else:
+        st.info("No se encontraron datos de satisfacción con verduras, hortalizas o tubérculos en la encuesta.")
 
 # Análisis de Comedores con Insatisfacción
-st.header("Comedores con Niveles de Insatisfacción (Global)")
+st.header("Comedores con Niveles de Insatisfacción")
 
-# Verificar columnas necesarias
-id_comedor_candidates = ['nombre_comedor', 'comedor', 'id_comedor', 'nombre del comedor']
-id_comedor_col = next((col for col in id_comedor_candidates if col in df.columns), None)
-# Usar las columnas que son numéricas después del procesamiento
-satisfaction_numeric_cols = [col for col in frutas_verduras_cols_map.keys() if col in df.columns and pd.api.types.is_numeric_dtype(df[col])]
+# Verificar que existan las columnas de satisfacción y la columna de identificación del comedor
+satisfaccion_cols = [col for col in frutas_verduras_cols.keys() if col in filtered_df.columns]
+id_comedor_col = next((col for col in ['nombre_comedor', 'comedor', 'id_comedor'] if col in filtered_df.columns), None)
 
-
-if not satisfaction_numeric_cols:
-    st.warning("No se encontraron datos numéricos de satisfacción con frutas/verduras para analizar.")
+if not satisfaccion_cols:
+    st.warning("No se encontraron datos de satisfacción con frutas y verduras en la encuesta.")
 elif not id_comedor_col:
-    st.warning("No se encontró columna de identificación del comedor.")
+    st.warning("No se encontró columna de identificación del comedor comunitario.")
 else:
-    print(f"DEBUG 3_Frutas_Verduras.py: Analizando insatisfacción (global). ID Comedor: '{id_comedor_col}', Columnas numéricas: {satisfaction_numeric_cols}")
-    try:
-        # Usar el DataFrame completo 'df'
-        analisis_df = df[[id_comedor_col] + satisfaction_numeric_cols].copy()
-        for col in satisfaction_numeric_cols:
-            analisis_df[col] = pd.to_numeric(analisis_df[col], errors='coerce')
-
-        # Función para identificar valores de insatisfacción (puntaje <= 2)
-        def es_insatisfecho_numeric(valor):
-             if pd.isna(valor): return False
-             return valor <= 2
-
-        # Identificar filas con insatisfacción
-        insatisfaccion_mask = analisis_df[satisfaction_numeric_cols].apply(lambda row: row.apply(es_insatisfecho_numeric).any(), axis=1)
-
-
-        if not insatisfaccion_mask.any():
-            st.success("No se encontraron reportes de insatisfacción (puntaje <= 2) para Frutas/Verduras.")
-        else:
-            insatisfechos_df = analisis_df[insatisfaccion_mask]
-            print(f"DEBUG 3_Frutas_Verduras.py: {len(insatisfechos_df)} filas totales con insatisfacción.")
-
-            # Crear tabla resumen
-            comedor_insatisfaccion_detalle = {}
-            for idx, row in insatisfechos_df.iterrows():
-                comedor_nombre = row[id_comedor_col]
-                if comedor_nombre not in comedor_insatisfaccion_detalle:
-                    comedor_insatisfaccion_detalle[comedor_nombre] = {'count': 0, 'aspects': set()}
-                comedor_insatisfaccion_detalle[comedor_nombre]['count'] += 1
-                for col in satisfaction_numeric_cols:
-                    if es_insatisfecho_numeric(row[col]):
-                        comedor_insatisfaccion_detalle[comedor_nombre]['aspects'].add(frutas_verduras_cols_map.get(col, col))
-
-            # Convertir a DataFrame para mostrar
-            resultado_lista = []
-            for comedor, data in comedor_insatisfaccion_detalle.items():
-                resultado_lista.append({
-                    'Comedor': comedor,
-                    'Número de Reportes con Insatisfacción': data['count'],
-                    'Aspectos Problemáticos': ', '.join(sorted(list(data['aspects'])))
-                })
-
-            if resultado_lista:
-                resultado_display_df = pd.DataFrame(resultado_lista)
-                st.write("Comedores con al menos un reporte de insatisfacción (puntaje <= 2) en Frutas/Verduras (Global):")
-                st.dataframe(resultado_display_df.sort_values('Número de Reportes con Insatisfacción', ascending=False),
-                             hide_index=True, use_container_width=True)
-            else:
-                 st.success("No se encontraron reportes de insatisfacción (puntaje <= 2) para Frutas/Verduras.")
-
-    except Exception as e_insat:
-        st.error(f"Error analizando comedores insatisfechos: {e_insat}")
-        print(f"ERROR 3_Frutas_Verduras.py - Análisis Insatisfacción: {e_insat}")
-
+    # Crear dataframe para análisis
+    analisis_df = filtered_df.copy()
+    
+    # Función para identificar valores de insatisfacción
+    def es_insatisfecho(valor):
+        if pd.isna(valor):
+            return False
+        
+        # Si es numérico, considerar valores menores o iguales a 2 como insatisfacción
+        if isinstance(valor, (int, float)):
+            return valor <= 2
+        
+        # Si es texto, buscar las palabras clave
+        valor_str = str(valor).upper()
+        return "INSATISFECHO" in valor_str or "MUY INSATISFECHO" in valor_str
+    
+    # Identificar comedores con insatisfacción
+    comedores_insatisfechos = {}
+    
+    for col in satisfaccion_cols:
+        # Filtrar filas con insatisfacción
+        insatisfaccion_mask = analisis_df[col].apply(es_insatisfecho)
+        
+        if insatisfaccion_mask.any():
+            # Agrupar por comedor y contar insatisfacciones
+            insatisfacciones = analisis_df[insatisfaccion_mask].groupby(id_comedor_col).size()
+            
+            # Almacenar resultados
+            for comedor, count in insatisfacciones.items():
+                if comedor not in comedores_insatisfechos:
+                    comedores_insatisfechos[comedor] = {}
+                
+                comedores_insatisfechos[comedor][frutas_verduras_cols[col]] = count
+    
+    # Mostrar resultados
+    if comedores_insatisfechos:
+        # Convertir a DataFrame para mejor visualización
+        resultado_df = pd.DataFrame.from_dict(comedores_insatisfechos, orient='index')
+        
+        # Reemplazar NaN con 0
+        resultado_df = resultado_df.fillna(0)
+        
+        # Agregar columna de total
+        resultado_df['Total Insatisfacciones'] = resultado_df.sum(axis=1)
+        
+        # Ordenar por total de insatisfacciones (descendente)
+        resultado_df = resultado_df.sort_values('Total Insatisfacciones', ascending=False)
+        
+        # Mostrar como tabla
+        st.write("Comedores con reportes de insatisfacción en frutas y verduras:")
+        st.dataframe(resultado_df, use_container_width=True)
+        
+        # Conclusión textual sobre comedores con insatisfacciones
+        st.subheader("Comedores con problemas de insatisfacción")
+        
+        # Tomar los primeros comedores (los más problemáticos)
+        top_comedores = resultado_df.head(5)
+        
+        # Crear conclusión textual
+        st.markdown("### Resumen de hallazgos")
+        
+        # Texto introductorio
+        st.markdown(f"""
+        Se han identificado **{len(resultado_df)}** comedores comunitarios que presentan reportes 
+        de insatisfacción con las frutas y verduras entregadas. A continuación se detallan los comedores 
+        con mayores niveles de insatisfacción:
+        """)
+        
+        # Lista de comedores problemáticos
+        for comedor, row in top_comedores.iterrows():
+            # Obtener los aspectos con insatisfacción para este comedor
+            aspectos_insatisfechos = []
+            for aspecto, valor in row.items():
+                if aspecto != 'Total Insatisfacciones' and valor > 0:
+                    aspectos_insatisfechos.append(aspecto)
+            
+            aspectos_texto = ", ".join(aspectos_insatisfechos)
+            st.markdown(f"""
+            - **{comedor}**: {int(row['Total Insatisfacciones'])} reportes de insatisfacción.
+              Aspectos problemáticos: {aspectos_texto}
+            """)
+        
+        # Recomendaciones generales
+        st.markdown("""
+        ### Recomendaciones
+        
+        Se sugiere implementar un plan de seguimiento especial para estos comedores, 
+        con énfasis en los aspectos señalados como problemáticos. Es recomendable:
+        
+        1. Revisar los procesos de selección de frutas y verduras antes de enviarlas a estos comedores
+        2. Verificar el tiempo de transporte y condiciones de almacenamiento para estos destinos
+        3. Asegurar que los productos perecederos lleguen con el grado de madurez adecuado
+        4. Considerar aumentar la variedad de productos entregados a estos comedores
+        5. Implementar un control de calidad adicional para envíos a estas ubicaciones
+        """)
+    else:
+        st.success("No se encontraron comedores con reportes de insatisfacción en frutas y verduras.")
 
 # Conclusiones y recomendaciones
-st.header("Conclusiones y Recomendaciones (Global - Frutas y Verduras)")
+st.header("Conclusiones y Recomendaciones")
 
-# Usar 'valid_display_cols' que ya verificó si hay datos
-if valid_display_cols:
-    try:
-        # Calcular promedios de satisfacción usando el df completo
-        satisfaction_means = {}
-        valid_cols_for_mean = [col for col in frutas_verduras_cols_map.keys() if col in df.columns and pd.api.types.is_numeric_dtype(df[col])]
-
-        if valid_cols_for_mean:
-             for col in valid_cols_for_mean:
-                 numeric_data = pd.to_numeric(df[col], errors='coerce')
-                 if numeric_data.notna().any():
-                     satisfaction_means[col] = numeric_data.mean()
-
-        if satisfaction_means:
-             min_aspect_col = min(satisfaction_means, key=satisfaction_means.get)
-             min_score = satisfaction_means[min_aspect_col]
-             max_aspect_col = max(satisfaction_means, key=satisfaction_means.get)
-             max_score = satisfaction_means[max_aspect_col]
-
-             min_desc = frutas_verduras_cols_map.get(min_aspect_col, min_aspect_col)
-             max_desc = frutas_verduras_cols_map.get(max_aspect_col, max_aspect_col)
-
-             st.markdown(f"""
-             Basado en el análisis de **todos** los datos:
-
-             - El aspecto con **mayor satisfacción** global es "{max_desc}" ({max_score:.2f}/5).
-             - El aspecto con **menor satisfacción** global es "{min_desc}" ({min_score:.2f}/5).
-
-             **Recomendaciones Generales:**
-             - Investigar las causas de la menor satisfacción en "{min_desc}" (calidad, frescura, variedad).
-             - Reforzar las buenas prácticas relacionadas con "{max_desc}".
-             - Evaluar la cadena de suministro y almacenamiento de productos frescos.
-             """)
-        else:
-             st.info("No hay datos numéricos de satisfacción suficientes para generar conclusiones.")
-    except Exception as e_conclu:
-        st.error(f"Error generando conclusiones: {e_conclu}")
-        print(f"ERROR 3_Frutas_Verduras.py - Conclusiones: {e_conclu}")
+# Análisis automático basado en los datos
+if available_cols:
+    # Calcular promedios de satisfacción
+    satisfaction_means = {}
+    for col in available_cols:
+        satisfaction_means[col] = filtered_df[col].mean()
+    
+    # Identificar el aspecto con menor satisfacción
+    min_aspect = min(satisfaction_means, key=satisfaction_means.get)
+    min_score = satisfaction_means[min_aspect]
+    
+    # Identificar el aspecto con mayor satisfacción
+    max_aspect = max(satisfaction_means, key=satisfaction_means.get)
+    max_score = satisfaction_means[max_aspect]
+    
+    # Mostrar conclusiones
+    st.markdown(f"""
+    Basado en el análisis de los datos:
+    
+    - El aspecto con **mayor satisfacción** es "{frutas_verduras_cols[max_aspect]}" con un puntaje promedio de **{max_score:.2f}/5**.
+    - El aspecto con **menor satisfacción** es "{frutas_verduras_cols[min_aspect]}" con un puntaje promedio de **{min_score:.2f}/5**.
+    
+    **Recomendaciones:**
+    
+    - Mejorar los procesos relacionados con "{frutas_verduras_cols[min_aspect]}"
+    - Mantener las buenas prácticas relacionadas con "{frutas_verduras_cols[max_aspect]}"
+    - Evaluar el sistema de selección, transporte y almacenaje de frutas y verduras
+    - Considerar implementar controles de calidad más estrictos para estos productos perecederos
+    """)
 else:
-    # Esto se maneja arriba con st.warning si no hay 'valid_display_cols'
-    pass
+    st.info("No hay datos suficientes para generar conclusiones y recomendaciones.")
 
 # Footer
 st.markdown("---")

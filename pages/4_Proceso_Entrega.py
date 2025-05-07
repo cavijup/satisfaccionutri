@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
-# Eliminar 'get_filtered_data' de la importación
-from utils.data_loader import load_data
+from utils.data_loader import load_data, get_filtered_data
 from utils.data_processing import (
     plot_question_satisfaction,
     plot_yes_no_questions,
     plot_complexity_analysis,
-    COL_DESCRIPTIONS # Asegúrate que COL_DESCRIPTIONS esté definido en data_processing.py
+    COL_DESCRIPTIONS
 )
 
 # Configuración de la página
@@ -20,324 +19,329 @@ st.set_page_config(
 st.title("Análisis de Satisfacción - Proceso de Entrega de Mercado")
 st.markdown("""
 Esta sección presenta el análisis detallado de la satisfacción con el proceso de entrega de mercados,
-incluyendo aspectos como ciclo de menús, notificación, tiempos de revisión y atención del personal,
-basado en **todos los datos recolectados**.
+incluyendo aspectos como ciclo de menús, notificación, tiempos de revisión y atención del personal.
 """)
 
-# --- Carga de Datos ---
-# @st.cache_data(show_spinner="Cargando datos...") # No cachear aquí si Home.py ya lo hace
-def get_data():
-    df_page = load_data()
-    return df_page
+# Cargar datos
+df = load_data()
 
-df = get_data() # Usar 'df' directamente
-
-if df is None or df.empty:
-    st.error("4_Proceso_Entrega.py: No se pudieron cargar los datos iniciales desde load_data().")
+if df.empty:
+    st.error("No se pudieron cargar los datos. Verifica tus credenciales y la conexión a Google Sheets.")
     st.stop()
 
-# --- Barra Lateral (Solo navegación y métrica total) ---
-st.sidebar.title("Navegación")
-st.sidebar.metric("Total de encuestas analizadas", len(df)) # Mostrar total de registros
+# Obtener los filtros de la página principal (si existen)
+date_range = None
+selected_comuna = None
+selected_barrio = None
+selected_nodo = None
 
-# --- SECCIÓN DE FILTROS ELIMINADA ---
+# Intentar obtener el rango de fechas del state
+if 'fecha' in df.columns:
+    df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+    valid_dates = df.dropna(subset=['fecha'])
+    
+    if not valid_dates.empty:
+        min_date = valid_dates['fecha'].min().date()
+        max_date = valid_dates['fecha'].max().date()
+        
+        date_range = st.sidebar.date_input(
+            "Rango de fechas",
+            [min_date, max_date],
+            min_value=min_date,
+            max_value=max_date
+        )
 
-# --- Contenido de la Página (Siempre usa 'df') ---
-print(f"INFO 4_Proceso_Entrega.py: Mostrando contenido con {len(df)} filas (sin filtros).")
+# Filtro por ubicación geográfica
+if 'comuna' in df.columns:
+    all_comunas = ["Todas"] + sorted([str(x) for x in df['comuna'].unique() if pd.notna(x)])
+    selected_comuna = st.sidebar.selectbox("Comuna", all_comunas)
+
+if 'barrio' in df.columns:
+    all_barrios = ["Todos"] + sorted([str(x) for x in df['barrio'].unique() if pd.notna(x)])
+    selected_barrio = st.sidebar.selectbox("Barrio", all_barrios)
+
+if 'nodo' in df.columns:
+    all_nodos = ["Todos"] + sorted([str(x) for x in df['nodo'].unique() if pd.notna(x)])
+    selected_nodo = st.sidebar.selectbox("Nodo", all_nodos)
+
+# Aplicar filtros
+filtered_df = get_filtered_data(df, date_range, selected_comuna, selected_barrio, selected_nodo)
+
+# Mostrar número de encuestas filtradas
+st.sidebar.metric("Total de encuestas filtradas", len(filtered_df))
 
 # Mapeo de las columnas del proceso de entrega
-# Usar COL_DESCRIPTIONS importado de data_processing
-entrega_cols_map = {
-    '23ciclo_menus': COL_DESCRIPTIONS.get('23ciclo_menus', 'Ciclo de menús'),
-    '24notificacion_telefonica': COL_DESCRIPTIONS.get('24notificacion_telefonica', 'Notificación telefónica'),
-    '25tiempo_revision_alimentos': COL_DESCRIPTIONS.get('25tiempo_revision_alimentos', 'Tiempo revisión alimentos'),
-    '26tiempo_entrega_mercdos': COL_DESCRIPTIONS.get('26tiempo_entrega_mercdos', 'Tiempo entre entregas'),
-    '27tiempo_demora_proveedor': COL_DESCRIPTIONS.get('27tiempo_demora_proveedor', 'Tiempo respuesta proveedor'),
-    '28actitud_funcionario_logistico': COL_DESCRIPTIONS.get('28actitud_funcionario_logistico', 'Actitud funcionario')
+entrega_cols = {
+    '23ciclo_menus': 'El ciclo de menús establecido por el proyecto',
+    '24notificacion_telefonica': 'La notificación telefónica para informar fecha y hora de entrega',
+    '25tiempo_revision_alimentos': 'El tiempo para revisar los alimentos al recibirlos',
+    '26tiempo_entrega_mercdos': 'El tiempo entre las entregas de los mercados (10 días hábiles)',
+    '27tiempo_demora_proveedor': 'El tiempo de respuesta para reposiciones o ajustes',
+    '28actitud_funcionario_logistico': 'La actitud y disposición del funcionario logístico'
 }
 
 # Análisis de satisfacción por aspectos del proceso
-st.header("Satisfacción con el Proceso de Entrega (Global)")
+st.header("Satisfacción con el Proceso de Entrega")
 
-# Comprobar si existen las columnas y tienen datos válidos
-valid_display_cols = []
-for col_key in entrega_cols_map.keys():
-    label_col = col_key + '_label'
-    if label_col in df.columns and df[label_col].notna().any():
-        valid_display_cols.append(col_key)
-    elif col_key in df.columns and pd.api.types.is_numeric_dtype(df[col_key].dtype) and df[col_key].notna().any():
-        valid_display_cols.append(col_key)
-        print(f"WARN 4_Proceso_Entrega.py: Usando columna numérica '{col_key}' porque '{label_col}' falta o está vacía.")
+# Comprobar si existen las columnas
+available_cols = [col for col in entrega_cols.keys() if col in filtered_df.columns]
 
-if not valid_display_cols:
-    st.warning("No se encontraron datos de satisfacción válidos para el Proceso de Entrega.")
+if not available_cols:
+    st.warning("No se encontraron datos de satisfacción con el proceso de entrega en la encuesta.")
     st.stop()
 
 # Crear tabs para diferentes aspectos del proceso
 logistica_tab, tiempos_tab, personal_tab = st.tabs(["Logística", "Tiempos", "Personal"])
 
 # Columnas para cada tab
-logistica_cols_keys = ['23ciclo_menus', '24notificacion_telefonica']
-tiempos_cols_keys = ['25tiempo_revision_alimentos', '26tiempo_entrega_mercdos', '27tiempo_demora_proveedor']
-personal_cols_keys = ['28actitud_funcionario_logistico']
+logistica_cols = ['23ciclo_menus', '24notificacion_telefonica']
+tiempos_cols = ['25tiempo_revision_alimentos', '26tiempo_entrega_mercdos', '27tiempo_demora_proveedor']
+personal_cols = ['28actitud_funcionario_logistico']
 
 with logistica_tab:
-    logistica_available = [col for col in logistica_cols_keys if col in valid_display_cols]
+    logistica_available = [col for col in logistica_cols if col in available_cols]
+    
     if logistica_available:
         st.subheader("Satisfacción con Aspectos Logísticos")
-        num_cols_log = 2
-        cols_layout_log = st.columns(num_cols_log)
-        col_index_log = 0
-        for col_key in logistica_available:
-            col_description = entrega_cols_map[col_key]
-            with cols_layout_log[col_index_log % num_cols_log]:
-                try:
-                    # Usar el DataFrame completo 'df'
-                    fig = plot_question_satisfaction(df, col_key, col_description)
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info(f"No hay datos suficientes para '{col_description}'")
-                except Exception as e_plot:
-                    st.error(f"Error al graficar '{col_description}': {e_plot}")
-                    print(f"ERROR 4_Proceso_Entrega.py - plot_question_satisfaction para '{col_key}': {e_plot}")
-            col_index_log += 1
+        
+        col1, col2 = st.columns(2)
+        
+        # Primera columna (si existe)
+        if len(logistica_available) > 0:
+            fig1 = plot_question_satisfaction(filtered_df, logistica_available[0], entrega_cols[logistica_available[0]])
+            if fig1:
+                col1.plotly_chart(fig1, use_container_width=True)
+            else:
+                col1.info(f"No hay datos suficientes para '{entrega_cols[logistica_available[0]]}'")
+        
+        # Segunda columna (si existe)
+        if len(logistica_available) > 1:
+            fig2 = plot_question_satisfaction(filtered_df, logistica_available[1], entrega_cols[logistica_available[1]])
+            if fig2:
+                col2.plotly_chart(fig2, use_container_width=True)
+            else:
+                col2.info(f"No hay datos suficientes para '{entrega_cols[logistica_available[1]]}'")
     else:
         st.info("No se encontraron datos de satisfacción con aspectos logísticos.")
 
 with tiempos_tab:
-    tiempos_available = [col for col in tiempos_cols_keys if col in valid_display_cols]
+    tiempos_available = [col for col in tiempos_cols if col in available_cols]
+    
     if tiempos_available:
         st.subheader("Satisfacción con Tiempos")
-        num_cols_tiempos = min(len(tiempos_available), 2) # Mostrar hasta 2 por fila
-        cols_layout_tiempos = st.columns(num_cols_tiempos)
-        col_index_tiempos = 0
-        for col_key in tiempos_available:
-            col_description = entrega_cols_map[col_key]
-            with cols_layout_tiempos[col_index_tiempos % num_cols_tiempos]:
-                try:
-                    # Usar el DataFrame completo 'df'
-                    fig = plot_question_satisfaction(df, col_key, col_description)
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info(f"No hay datos suficientes para '{col_description}'")
-                except Exception as e_plot:
-                    st.error(f"Error al graficar '{col_description}': {e_plot}")
-                    print(f"ERROR 4_Proceso_Entrega.py - plot_question_satisfaction para '{col_key}': {e_plot}")
-            col_index_tiempos += 1
+        
+        # Mostrar gráficos
+        for i, col in enumerate(tiempos_available):
+            fig = plot_question_satisfaction(filtered_df, col, entrega_cols[col])
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info(f"No hay datos suficientes para '{entrega_cols[col]}'")
     else:
         st.info("No se encontraron datos de satisfacción con tiempos.")
 
 with personal_tab:
-    personal_available = [col for col in personal_cols_keys if col in valid_display_cols]
+    personal_available = [col for col in personal_cols if col in available_cols]
+    
     if personal_available:
         st.subheader("Satisfacción con el Personal")
-        num_cols_pers = 1 # Mostrar uno solo
-        cols_layout_pers = st.columns(num_cols_pers)
-        col_index_pers = 0
-        for col_key in personal_available:
-            col_description = entrega_cols_map[col_key]
-            with cols_layout_pers[col_index_pers % num_cols_pers]:
-                try:
-                    # Usar el DataFrame completo 'df'
-                    fig = plot_question_satisfaction(df, col_key, col_description)
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info(f"No hay datos suficientes para '{col_description}'")
-                except Exception as e_plot:
-                     st.error(f"Error al graficar '{col_description}': {e_plot}")
-                     print(f"ERROR 4_Proceso_Entrega.py - plot_question_satisfaction para '{col_key}': {e_plot}")
-            col_index_pers += 1
+        
+        # Mostrar gráficos
+        for col in personal_available:
+            fig = plot_question_satisfaction(filtered_df, col, entrega_cols[col])
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info(f"No hay datos suficientes para '{entrega_cols[col]}'")
     else:
         st.info("No se encontraron datos de satisfacción con el personal.")
 
 # Análisis de preguntas sí/no
-st.header("Cumplimiento y Comunicación (Global)")
-try:
-    yes_no_fig = plot_yes_no_questions(df) # Usar df completo
-    if yes_no_fig:
-        st.plotly_chart(yes_no_fig, use_container_width=True)
-    else:
-        st.info("No hay datos suficientes para el análisis de preguntas sí/no.")
-except Exception as e_yesno:
-    st.error(f"Error al graficar preguntas Sí/No: {e_yesno}")
-    print(f"ERROR 4_Proceso_Entrega.py - plot_yes_no_questions: {e_yesno}")
+st.header("Cumplimiento y Comunicación")
 
-
-# Análisis de complejidad del proceso
-st.header("Percepción de Complejidad del Proceso (Global)")
-try:
-    complexity_fig = plot_complexity_analysis(df) # Usar df completo
-    if complexity_fig:
-        st.plotly_chart(complexity_fig, use_container_width=True)
-    else:
-        st.info("No hay datos suficientes para el análisis de complejidad.")
-except Exception as e_complex:
-    st.error(f"Error al graficar complejidad: {e_complex}")
-    print(f"ERROR 4_Proceso_Entrega.py - plot_complexity_analysis: {e_complex}")
-
+yes_no_fig = plot_yes_no_questions(filtered_df)
+if yes_no_fig:
+    st.plotly_chart(yes_no_fig, use_container_width=True)
+else:
+    st.info("No hay datos suficientes para el análisis de preguntas sí/no.")
 
 # Análisis de Comedores con Insatisfacción
-st.header("Comedores con Niveles de Insatisfacción (Global)")
+st.header("Comedores con Niveles de Insatisfacción")
 
-# Verificar columnas necesarias
-id_comedor_candidates = ['nombre_comedor', 'comedor', 'id_comedor', 'nombre del comedor']
-id_comedor_col = next((col for col in id_comedor_candidates if col in df.columns), None)
-# Usar las columnas que son numéricas después del procesamiento
-satisfaction_numeric_cols = [col for col in entrega_cols_map.keys() if col in df.columns and pd.api.types.is_numeric_dtype(df[col])]
+# Verificar que existan las columnas de satisfacción y la columna de identificación del comedor
+satisfaccion_cols = [col for col in entrega_cols.keys() if col in filtered_df.columns]
+id_comedor_col = next((col for col in ['nombre_comedor', 'comedor', 'id_comedor'] if col in filtered_df.columns), None)
 
-if not satisfaction_numeric_cols:
-    st.warning("No se encontraron datos numéricos de satisfacción con el proceso de entrega para analizar.")
+if not satisfaccion_cols:
+    st.warning("No se encontraron datos de satisfacción con el proceso de entrega en la encuesta.")
 elif not id_comedor_col:
-    st.warning("No se encontró columna de identificación del comedor.")
+    st.warning("No se encontró columna de identificación del comedor comunitario.")
 else:
-    print(f"DEBUG 4_Proceso_Entrega.py: Analizando insatisfacción (global). ID Comedor: '{id_comedor_col}', Columnas numéricas: {satisfaction_numeric_cols}")
-    try:
-        # Usar el DataFrame completo 'df'
-        analisis_df = df[[id_comedor_col] + satisfaction_numeric_cols].copy()
-        for col in satisfaction_numeric_cols:
-            analisis_df[col] = pd.to_numeric(analisis_df[col], errors='coerce')
-
-        # Función para identificar valores de insatisfacción (puntaje <= 2)
-        def es_insatisfecho_numeric(valor):
-             if pd.isna(valor): return False
-             return valor <= 2
-
-        # Identificar filas con insatisfacción
-        insatisfaccion_mask = analisis_df[satisfaction_numeric_cols].apply(lambda row: row.apply(es_insatisfecho_numeric).any(), axis=1)
-
-        if not insatisfaccion_mask.any():
-            st.success("No se encontraron reportes de insatisfacción (puntaje <= 2) para Proceso de Entrega.")
-        else:
-            insatisfechos_df = analisis_df[insatisfaccion_mask]
-            print(f"DEBUG 4_Proceso_Entrega.py: {len(insatisfechos_df)} filas totales con insatisfacción.")
-
-            # Crear tabla resumen
-            comedor_insatisfaccion_detalle = {}
-            for idx, row in insatisfechos_df.iterrows():
-                comedor_nombre = row[id_comedor_col]
-                if comedor_nombre not in comedor_insatisfaccion_detalle:
-                    comedor_insatisfaccion_detalle[comedor_nombre] = {'count': 0, 'aspects': set()}
-                comedor_insatisfaccion_detalle[comedor_nombre]['count'] += 1
-                for col in satisfaction_numeric_cols:
-                    if es_insatisfecho_numeric(row[col]):
-                        comedor_insatisfaccion_detalle[comedor_nombre]['aspects'].add(entrega_cols_map.get(col, col))
-
-            # Convertir a DataFrame para mostrar
-            resultado_lista = []
-            for comedor, data in comedor_insatisfaccion_detalle.items():
-                resultado_lista.append({
-                    'Comedor': comedor,
-                    'Número de Reportes con Insatisfacción': data['count'],
-                    'Aspectos Problemáticos': ', '.join(sorted(list(data['aspects'])))
-                })
-
-            if resultado_lista:
-                resultado_display_df = pd.DataFrame(resultado_lista)
-                st.write("Comedores con al menos un reporte de insatisfacción (puntaje <= 2) en Proceso de Entrega (Global):")
-                st.dataframe(resultado_display_df.sort_values('Número de Reportes con Insatisfacción', ascending=False),
-                             hide_index=True, use_container_width=True)
-            else:
-                 st.success("No se encontraron reportes de insatisfacción (puntaje <= 2) para Proceso de Entrega.")
-
-    except Exception as e_insat:
-        st.error(f"Error analizando comedores insatisfechos: {e_insat}")
-        print(f"ERROR 4_Proceso_Entrega.py - Análisis Insatisfacción: {e_insat}")
-
+    # Crear dataframe para análisis
+    analisis_df = filtered_df.copy()
+    
+    # Función para identificar valores de insatisfacción
+    def es_insatisfecho(valor):
+        if pd.isna(valor):
+            return False
+        
+        # Si es numérico, considerar valores menores o iguales a 2 como insatisfacción
+        if isinstance(valor, (int, float)):
+            return valor <= 2
+        
+        # Si es texto, buscar las palabras clave
+        valor_str = str(valor).upper()
+        return "INSATISFECHO" in valor_str or "MUY INSATISFECHO" in valor_str
+    
+    # Identificar comedores con insatisfacción
+    comedores_insatisfechos = {}
+    
+    for col in satisfaccion_cols:
+        # Filtrar filas con insatisfacción
+        insatisfaccion_mask = analisis_df[col].apply(es_insatisfecho)
+        
+        if insatisfaccion_mask.any():
+            # Agrupar por comedor y contar insatisfacciones
+            insatisfacciones = analisis_df[insatisfaccion_mask].groupby(id_comedor_col).size()
+            
+            # Almacenar resultados
+            for comedor, count in insatisfacciones.items():
+                if comedor not in comedores_insatisfechos:
+                    comedores_insatisfechos[comedor] = {}
+                
+                comedores_insatisfechos[comedor][entrega_cols[col]] = count
+    
+    # Mostrar resultados
+    if comedores_insatisfechos:
+        # Convertir a DataFrame para mejor visualización
+        resultado_df = pd.DataFrame.from_dict(comedores_insatisfechos, orient='index')
+        
+        # Reemplazar NaN con 0
+        resultado_df = resultado_df.fillna(0)
+        
+        # Agregar columna de total
+        resultado_df['Total Insatisfacciones'] = resultado_df.sum(axis=1)
+        
+        # Ordenar por total de insatisfacciones (descendente)
+        resultado_df = resultado_df.sort_values('Total Insatisfacciones', ascending=False)
+        
+        # Mostrar como tabla
+        st.write("Comedores con reportes de insatisfacción en el proceso de entrega:")
+        st.dataframe(resultado_df, use_container_width=True)
+        
+        # Conclusión textual sobre comedores con insatisfacciones
+        st.subheader("Comedores con problemas de insatisfacción")
+        
+        # Tomar los primeros comedores (los más problemáticos)
+        top_comedores = resultado_df.head(5)
+        
+        # Crear conclusión textual
+        st.markdown("### Resumen de hallazgos")
+        
+        # Texto introductorio
+        st.markdown(f"""
+        Se han identificado **{len(resultado_df)}** comedores comunitarios que presentan reportes 
+        de insatisfacción con el proceso de entrega de mercados. A continuación se detallan los comedores 
+        con mayores niveles de insatisfacción:
+        """)
+        
+        # Lista de comedores problemáticos
+        for comedor, row in top_comedores.iterrows():
+            # Obtener los aspectos con insatisfacción para este comedor
+            aspectos_insatisfechos = []
+            for aspecto, valor in row.items():
+                if aspecto != 'Total Insatisfacciones' and valor > 0:
+                    aspectos_insatisfechos.append(aspecto)
+            
+            aspectos_texto = ", ".join(aspectos_insatisfechos)
+            st.markdown(f"""
+            - **{comedor}**: {int(row['Total Insatisfacciones'])} reportes de insatisfacción.
+              Aspectos problemáticos: {aspectos_texto}
+            """)
+        
+        # Recomendaciones generales
+        st.markdown("""
+        ### Recomendaciones
+        
+        Se sugiere implementar un plan de seguimiento especial para estos comedores, 
+        con énfasis en los aspectos señalados como problemáticos. Es recomendable:
+        
+        1. Mejorar la comunicación con estos comedores respecto a fechas y horarios de entrega
+        2. Revisar los tiempos de entrega y ajustarlos según las necesidades específicas de cada comedor
+        3. Proporcionar capacitación adicional al personal que atiende estos comedores
+        4. Implementar un sistema de seguimiento posterior a la entrega para verificar la satisfacción
+        5. Establecer un canal directo de comunicación para resolver problemas de manera ágil
+        """)
+    else:
+        st.success("No se encontraron comedores con reportes de insatisfacción en el proceso de entrega.")
 
 # Análisis de sugerencias de mejora
-st.header("Sugerencias de Mejora (Global)")
+st.header("Sugerencias de Mejora")
 
-sugestiones_col = '32aspectos_de_mejora' # Asegúrate que este es el nombre correcto de la columna
-if sugestiones_col in df.columns:
-    sugerencias = df[sugestiones_col].dropna().astype(str)
-    sugerencias = sugerencias[sugerencias.str.strip().str.len() > 5] # Filtrar strings muy cortos
-
+# Verificar si existe la columna de sugerencias
+if '32aspectos_de_mejora' in filtered_df.columns:
+    # En lugar de nube de palabras, mostrar las principales sugerencias agrupadas
+    sugerencias = filtered_df['32aspectos_de_mejora'].dropna().astype(str)
+    
     if not sugerencias.empty:
-        st.write(f"Se registraron {len(sugerencias)} sugerencias de mejora. Algunas de ellas:")
-        # Mostrar algunas sugerencias textuales (ej. las 10 primeras no vacías)
-        for i, sugerencia in enumerate(sugerencias.head(10), 1):
-            st.markdown(f"- *{sugerencia.strip()}*")
-        # Podrías añadir aquí un wordcloud si descomentas la importación y llamada a create_wordcloud
-        # try:
-        #     fig_wc, terms_wc = create_wordcloud(df, sugestiones_col)
-        #     if fig_wc:
-        #         st.pyplot(fig_wc)
-        #     else:
-        #         st.info("No se pudo generar la nube de palabras de sugerencias.")
-        # except Exception as e_wc:
-        #      st.error(f"Error generando nube de palabras: {e_wc}")
-
+        # Mostrar conteo de sugerencias
+        st.write(f"Se han registrado **{len(sugerencias)}** sugerencias de mejora. A continuación se muestran las 5 sugerencias más representativas:")
+        
+        # Mostrar las 5 sugerencias más largas (probablemente las más detalladas)
+        sugerencias_ordenadas = sugerencias.sort_values(key=lambda x: x.str.len(), ascending=False)
+        for i, sugerencia in enumerate(sugerencias_ordenadas.head(5), 1):
+            if len(sugerencia) > 10:  # Solo mostrar sugerencias significativas
+                st.markdown(f"**{i}. Sugerencia de mejora:** {sugerencia}")
     else:
-        st.info("No se han registrado sugerencias de mejora significativas.")
+        st.info("No se han registrado sugerencias de mejora.")
 else:
-    st.info(f"No se encontró la columna '{sugestiones_col}'.")
-
+    st.info("No se encontró la columna de sugerencias de mejora.")
 
 # Conclusiones y recomendaciones
-st.header("Conclusiones y Recomendaciones (Global - Proceso Entrega)")
+st.header("Conclusiones y Recomendaciones")
 
-# Usar 'valid_display_cols' que ya verificó si hay datos
-if valid_display_cols:
-    try:
-        # Calcular promedios de satisfacción usando el df completo
-        satisfaction_means = {}
-        valid_cols_for_mean = [col for col in entrega_cols_map.keys() if col in df.columns and pd.api.types.is_numeric_dtype(df[col])]
-
-        if valid_cols_for_mean:
-             for col in valid_cols_for_mean:
-                 numeric_data = pd.to_numeric(df[col], errors='coerce')
-                 if numeric_data.notna().any():
-                     satisfaction_means[col] = numeric_data.mean()
-
-        if satisfaction_means:
-             min_aspect_col = min(satisfaction_means, key=satisfaction_means.get)
-             min_score = satisfaction_means[min_aspect_col]
-             max_aspect_col = max(satisfaction_means, key=satisfaction_means.get)
-             max_score = satisfaction_means[max_aspect_col]
-
-             min_desc = entrega_cols_map.get(min_aspect_col, min_aspect_col)
-             max_desc = entrega_cols_map.get(max_aspect_col, max_aspect_col)
-
-             st.markdown(f"""
-             Basado en el análisis de **todos** los datos:
-
-             - El aspecto con **mayor satisfacción** global es "{max_desc}" ({max_score:.2f}/5).
-             - El aspecto con **menor satisfacción** global es "{min_desc}" ({min_score:.2f}/5).
-             """)
-
-             # Añadir info de Sí/No y Complejidad si están disponibles
-             if '29plazos_entrega_mercados' in df.columns:
-                  plazos_series = df['29plazos_entrega_mercados'].dropna().astype(str).str.strip().str.lower()
-                  if len(plazos_series) > 0:
-                      plazos_si = (plazos_series == 'sí').mean() * 100
-                      st.markdown(f"- El **{plazos_si:.1f}%** reporta que **Sí** se cumplen los plazos.")
-
-             if '31pasos_recepcion_mercado' in df.columns:
-                 proceso_series = df['31pasos_recepcion_mercado'].dropna().astype(str).str.strip().str.lower()
-                 if len(proceso_series) > 0:
-                     proceso_si = (proceso_series == 'sencillo').mean() * 100
-                     st.markdown(f"- El **{proceso_si:.1f}%** considera el proceso de recepción **sencillo**.")
-
-
-             st.markdown("""
-             **Recomendaciones Generales:**
-             - Enfocarse en mejorar los procesos relacionados con "{min_desc}".
-             - Optimizar la comunicación sobre fechas/horas de entrega (si '{entrega_cols_map.get('24notificacion_telefonica')}' tiene baja puntuación).
-             - Simplificar pasos de recepción si el porcentaje de 'sencillo' es bajo.
-             - Mantener la buena actitud del personal si '{entrega_cols_map.get('28actitud_funcionario_logistico')}' tiene alta puntuación.
-             """)
-        else:
-             st.info("No hay datos numéricos de satisfacción suficientes para generar conclusiones.")
-    except Exception as e_conclu:
-        st.error(f"Error generando conclusiones: {e_conclu}")
-        print(f"ERROR 4_Proceso_Entrega.py - Conclusiones: {e_conclu}")
+# Análisis automático basado en los datos
+if available_cols:
+    # Calcular promedios de satisfacción
+    satisfaction_means = {}
+    for col in available_cols:
+        satisfaction_means[col] = filtered_df[col].mean()
+    
+    # Identificar el aspecto con menor satisfacción
+    min_aspect = min(satisfaction_means, key=satisfaction_means.get)
+    min_score = satisfaction_means[min_aspect]
+    
+    # Identificar el aspecto con mayor satisfacción
+    max_aspect = max(satisfaction_means, key=satisfaction_means.get)
+    max_score = satisfaction_means[max_aspect]
+    
+    # Calcular si el proceso es percibido como sencillo
+    if '31pasos_recepcion_mercado' in filtered_df.columns:
+        proceso_sencillo = (filtered_df['31pasos_recepcion_mercado'].astype(str).str.lower() == 'sencillo').mean() * 100
+    else:
+        proceso_sencillo = None
+    
+    # Mostrar conclusiones
+    st.markdown(f"""
+    Basado en el análisis de los datos:
+    
+    - El aspecto con **mayor satisfacción** es "{entrega_cols[max_aspect]}" con un puntaje promedio de **{max_score:.2f}/5**.
+    - El aspecto con **menor satisfacción** es "{entrega_cols[min_aspect]}" con un puntaje promedio de **{min_score:.2f}/5**.
+    """)
+    
+    if proceso_sencillo is not None:
+        st.markdown(f"- El **{proceso_sencillo:.1f}%** de los encuestados considera que el proceso de recepción es **sencillo**.")
+    
+    st.markdown("""
+    **Recomendaciones:**
+    
+    - Revisar y optimizar los aspectos con menor satisfacción
+    - Mantener un canal de comunicación abierto con los beneficiarios
+    - Evaluar posibles ajustes en los tiempos y la logística del proceso
+    - Proporcionar capacitación adicional al personal de entrega
+    """)
 else:
-    # Esto se maneja arriba con st.warning si no hay 'valid_display_cols'
-    pass
-
+    st.info("No hay datos suficientes para generar conclusiones y recomendaciones.")
 
 # Footer
 st.markdown("---")
