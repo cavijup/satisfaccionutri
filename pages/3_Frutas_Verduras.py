@@ -27,13 +27,13 @@ if df.empty:
     st.error("No se pudieron cargar los datos. Verifica tus credenciales y la conexión a Google Sheets.")
     st.stop()
 
-# Obtener los filtros de la página principal (si existen)
+# Mantener las variables de filtro pero solo para mostrar en la UI
 date_range = None
 selected_comuna = None
 selected_barrio = None
 selected_nodo = None
 
-# Intentar obtener el rango de fechas del state
+# Intentar obtener el rango de fechas (solo para mostrar)
 if 'fecha' in df.columns:
     df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
     valid_dates = df.dropna(subset=['fecha'])
@@ -43,30 +43,33 @@ if 'fecha' in df.columns:
         max_date = valid_dates['fecha'].max().date()
         
         date_range = st.sidebar.date_input(
-            "Rango de fechas",
+            "Rango de fechas (Desactivado)",
             [min_date, max_date],
             min_value=min_date,
             max_value=max_date
         )
 
-# Filtro por ubicación geográfica
+# Filtro por ubicación geográfica (desactivados)
 if 'comuna' in df.columns:
     all_comunas = ["Todas"] + sorted([str(x) for x in df['comuna'].unique() if pd.notna(x)])
-    selected_comuna = st.sidebar.selectbox("Comuna", all_comunas)
+    selected_comuna = st.sidebar.selectbox("Comuna (Desactivado)", all_comunas)
 
 if 'barrio' in df.columns:
     all_barrios = ["Todos"] + sorted([str(x) for x in df['barrio'].unique() if pd.notna(x)])
-    selected_barrio = st.sidebar.selectbox("Barrio", all_barrios)
+    selected_barrio = st.sidebar.selectbox("Barrio (Desactivado)", all_barrios)
 
 if 'nodo' in df.columns:
     all_nodos = ["Todos"] + sorted([str(x) for x in df['nodo'].unique() if pd.notna(x)])
-    selected_nodo = st.sidebar.selectbox("Nodo", all_nodos)
+    selected_nodo = st.sidebar.selectbox("Nodo (Desactivado)", all_nodos)
 
-# Aplicar filtros
-filtered_df = get_filtered_data(df, date_range, selected_comuna, selected_barrio, selected_nodo)
+# Información sobre filtros desactivados
+st.sidebar.info("Los filtros están desactivados temporalmente para mostrar todos los datos disponibles.")
 
-# Mostrar número de encuestas filtradas
-st.sidebar.metric("Total de encuestas filtradas", len(filtered_df))
+# NO aplicar filtros - Usar el DataFrame completo
+filtered_df = df.copy()  # Usar todos los datos sin filtrar
+
+# Mostrar número de encuestas
+st.sidebar.metric("Total de encuestas", len(filtered_df))
 
 # Mapeo de las columnas de frutas y verduras
 frutas_verduras_cols = {

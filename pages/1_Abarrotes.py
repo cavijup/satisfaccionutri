@@ -39,17 +39,14 @@ if df_pagina is None or df_pagina.empty:
 
 
 # --- Sidebar para Filtros (similar a Home.py) ---
-# Obtenemos los filtros globales definidos en Home.py o definimos aquí
-# Lo ideal es que los filtros sean globales y se lean aquí.
-# Si los defines aquí de nuevo, asegúrate de usar keys diferentes si es necesario.
-
-st.sidebar.title("Filtros (Globales)")
+# Conservamos la sidebar pero no la usaremos para filtrar los datos
+st.sidebar.title("Filtros (Desactivados)")
 date_range_selected = None
 selected_comuna = "Todas"
 selected_barrio = "Todos"
 selected_nodo = "Todos"
 
-# Re-declarar filtros para que estén disponibles en esta página
+# Re-declarar filtros para que estén disponibles en esta página (solo para mostrar en la UI)
 # Filtro por fecha
 if 'fecha' in df_pagina.columns and pd.api.types.is_datetime64_any_dtype(df_pagina['fecha']):
     valid_dates = df_pagina['fecha'].dropna()
@@ -62,7 +59,7 @@ if 'fecha' in df_pagina.columns and pd.api.types.is_datetime64_any_dtype(df_pagi
                 default_end_date = max_date_dt.date()
                 # Usar una KEY única para este filtro si se repite en otras páginas
                 date_range_selected = st.sidebar.date_input(
-                    "Rango de fechas",
+                    "Rango de fechas (Desactivado)",
                     value=[default_start_date, default_end_date],
                     min_value=default_start_date,
                     max_value=default_end_date,
@@ -76,36 +73,36 @@ if 'fecha' in df_pagina.columns and pd.api.types.is_datetime64_any_dtype(df_pagi
 # Filtro por ubicación
 if 'comuna' in df_pagina.columns:
     all_comunas = ["Todas"] + sorted([str(x) for x in df_pagina['comuna'].dropna().unique()])
-    selected_comuna = st.sidebar.selectbox("Comuna", all_comunas, index=0, key='comuna_filter_abarrotes')
+    selected_comuna = st.sidebar.selectbox("Comuna (Desactivado)", all_comunas, index=0, key='comuna_filter_abarrotes')
 # else: st.sidebar.info("Columna 'comuna' no disponible.") # Evitar repetir mensajes
 
 if 'barrio' in df_pagina.columns:
     all_barrios = ["Todos"] + sorted([str(x) for x in df_pagina['barrio'].dropna().unique()])
-    selected_barrio = st.sidebar.selectbox("Barrio", all_barrios, index=0, key='barrio_filter_abarrotes')
+    selected_barrio = st.sidebar.selectbox("Barrio (Desactivado)", all_barrios, index=0, key='barrio_filter_abarrotes')
 # else: st.sidebar.info("Columna 'barrio' no disponible.")
 
 if 'nodo' in df_pagina.columns:
     all_nodos = ["Todos"] + sorted([str(x) for x in df_pagina['nodo'].dropna().unique()])
-    selected_nodo = st.sidebar.selectbox("Nodo", all_nodos, index=0, key='nodo_filter_abarrotes')
+    selected_nodo = st.sidebar.selectbox("Nodo (Desactivado)", all_nodos, index=0, key='nodo_filter_abarrotes')
 # else: st.sidebar.info("Columna 'nodo' no disponible.")
 
+# Información sobre filtros desactivados
+st.sidebar.info("Los filtros están desactivados temporalmente para mostrar todos los datos disponibles.")
 
-# --- Aplicar Filtros ---
-print(f"DEBUG 1_Abarrotes.py: Antes de get_filtered_data. Filtros: Fecha={date_range_selected}, Comuna='{selected_comuna}', Barrio='{selected_barrio}', Nodo='{selected_nodo}'")
-filtered_df_pagina = get_filtered_data(df_pagina.copy(), date_range_selected, selected_comuna, selected_barrio, selected_nodo)
-print(f"DEBUG 1_Abarrotes.py: Después de get_filtered_data. Filas filtradas: {len(filtered_df_pagina)}")
+# --- NO APLICAR FILTROS - Usar el DataFrame completo ---
+# En lugar de filtrar, simplemente usamos el DataFrame completo
+filtered_df_pagina = df_pagina.copy()  # Usar todos los datos sin filtrar
 
-# Mostrar métrica de encuestas filtradas para esta página
-st.sidebar.metric("Encuestas Filtradas (Abarrotes)", len(filtered_df_pagina))
+# Mostrar métrica de encuestas para esta página
+st.sidebar.metric("Total de Encuestas (Abarrotes)", len(filtered_df_pagina))
 
 
-# --- Contenido de la Página (si hay datos filtrados) ---
+# --- Contenido de la Página (si hay datos) ---
 if filtered_df_pagina.empty:
-    st.warning("No se encontraron registros con los filtros seleccionados para el análisis de Abarrotes.")
-    st.info(f"Filtros actuales: Fecha={date_range_selected}, Comuna='{selected_comuna}', Barrio='{selected_barrio}', Nodo='{selected_nodo}'")
+    st.warning("No se encontraron registros para el análisis de Abarrotes.")
     print(f"WARN 1_Abarrotes.py: filtered_df_pagina está vacío.")
 else:
-    print(f"INFO 1_Abarrotes.py: Mostrando contenido con {len(filtered_df_pagina)} filas filtradas.")
+    print(f"INFO 1_Abarrotes.py: Mostrando contenido con {len(filtered_df_pagina)} filas totales.")
     # --- Análisis de Abarrotes ---
 
     # Mapeo de las columnas de abarrotes (usar COL_DESCRIPTIONS si es posible)
@@ -132,7 +129,7 @@ else:
 
 
     if not valid_display_cols:
-        st.warning("No se encontraron datos de satisfacción válidos para Abarrotes con los filtros actuales.")
+        st.warning("No se encontraron datos de satisfacción válidos para Abarrotes.")
     else:
         # Crear columnas para layout (máximo 2 gráficos por fila)
         num_cols = 2
@@ -186,7 +183,7 @@ else:
             insatisfaccion_mask = (analisis_df[satisfaction_numeric_cols] <= 2).any(axis=1)
 
             if not insatisfaccion_mask.any():
-                st.success("No se encontraron reportes de insatisfacción (puntaje <= 2) para Abarrotes con los filtros actuales.")
+                st.success("No se encontraron reportes de insatisfacción (puntaje <= 2) para Abarrotes con los datos actuales.")
             else:
                 insatisfechos_df = analisis_df[insatisfaccion_mask]
                 print(f"DEBUG 1_Abarrotes.py: {len(insatisfechos_df)} filas con al menos una insatisfacción encontrada.")
@@ -230,7 +227,7 @@ else:
              max_desc = abarrotes_cols_map.get(max_aspect_col, max_aspect_col)
 
              st.markdown(f"""
-             Basado en el análisis de los datos filtrados:
+             Basado en el análisis de los datos:
 
              - El aspecto con **mayor satisfacción** es "{max_desc}" con un puntaje promedio de **{max_score:.2f}/5**.
              - El aspecto con **menor satisfacción** es "{min_desc}" con un puntaje promedio de **{min_score:.2f}/5**.
