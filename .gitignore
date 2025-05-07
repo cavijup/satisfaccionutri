@@ -1,0 +1,22 @@
+# Ignorar credenciales
+credentials.json
+*.secret # Si decides renombrar tu archivo de credenciales para Streamlit Secrets localmente
+
+# Archivos de entorno virtual de Python
+venv/
+*.venv/
+env/
+ENV/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Archivos de sistema operativo
+.DS_Store
+Thumbs.db
+
+# Archivos de IDE
+.vscode/
+.idea/
+
