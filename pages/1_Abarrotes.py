@@ -12,7 +12,7 @@ from utils.data_processing import ( # Asegúrate que estas funciones existan en 
 # Función modificada para barras horizontales y fondo blanco
 def plot_question_satisfaction(df, col_key, col_description):
     """
-    Crea un gráfico de barras horizontales con fondo blanco
+    Crea un gráfico de barras horizontales con fondo blanco y colores originales
     """
     try:
         # Determinar qué columna usar (priorizar _label)
@@ -49,6 +49,20 @@ def plot_question_satisfaction(df, col_key, col_description):
             'Cantidad': value_counts.values
         })
 
+        # Colores originales que tenías
+        original_colors = [
+            '#FF6B6B',  # Rojo coral
+            '#4ECDC4',  # Turquesa
+            '#45B7D1',  # Azul cielo
+            '#96CEB4',  # Verde menta
+            '#FFEAA7',  # Amarillo suave
+            '#DDA0DD',  # Plum
+            '#98D8C8',  # Menta claro
+            '#F7DC6F',  # Amarillo dorado
+            '#BB8FCE',  # Lavanda
+            '#85C1E9'   # Azul claro
+        ]
+
         # Crear gráfico de barras horizontales usando plotly express
         fig = px.bar(
             chart_df, 
@@ -56,7 +70,9 @@ def plot_question_satisfaction(df, col_key, col_description):
             y='Respuesta',
             orientation='h',
             title=col_description,
-            text='Cantidad'
+            text='Cantidad',
+            color='Respuesta',
+            color_discrete_sequence=original_colors
         )
 
         # Configurar layout con fondo blanco
@@ -97,7 +113,10 @@ def plot_question_satisfaction(df, col_key, col_description):
             height=max(300, len(chart_df) * 50 + 100),
             
             # Configuración de fuente
-            font=dict(family="Arial", size=10, color="rgba(70, 70, 70, 0.9)")
+            font=dict(family="Arial", size=10, color="rgba(70, 70, 70, 0.9)"),
+            
+            # Ocultar leyenda ya que los colores son por categoría
+            showlegend=False
         )
 
         # Configurar las barras
