@@ -8,6 +8,53 @@ from utils.data_processing import (
     COL_DESCRIPTIONS
 )
 
+# Función para convertir gráficos a barras horizontales
+def make_horizontal_chart(fig, title_with_icon=None):
+    """
+    Convierte cualquier gráfico de barras verticales a horizontales y aplica fondo blanco
+    """
+    if fig is None:
+        return None
+    
+    try:
+        # Intercambiar x e y para hacer horizontal
+        for trace in fig.data:
+            if hasattr(trace, 'x') and hasattr(trace, 'y'):
+                # Intercambiar valores
+                temp_x = trace.x
+                trace.x = trace.y
+                trace.y = temp_x
+                
+                # Cambiar orientación
+                if hasattr(trace, 'orientation'):
+                    trace.orientation = 'h'
+        
+        # Actualizar layout para fondo blanco y ajustar ejes
+        layout_updates = {
+            'plot_bgcolor': 'white',
+            'paper_bgcolor': 'white',
+            'xaxis_title': "Número de Respuestas",
+            'yaxis_title': "Categorías de Respuesta",
+            'yaxis': {'categoryorder': 'total ascending'}  # Ordenar por valores
+        }
+        
+        # Agregar título con icono si se proporciona
+        if title_with_icon:
+            layout_updates['title'] = {
+                'text': title_with_icon,
+                'x': 0.5,
+                'xanchor': 'center',
+                'font': {'size': 16}
+            }
+        
+        fig.update_layout(**layout_updates)
+        
+        return fig
+        
+    except Exception as e:
+        print(f"Error convirtiendo a horizontal: {e}")
+        return fig
+
 # Configuración de la página
 st.set_page_config(
     page_title="Análisis del Proceso de Entrega",
@@ -16,7 +63,7 @@ st.set_page_config(
 )
 
 # Título y descripción
-st.title("Análisis de Satisfacción - Proceso de Entrega de Mercado")
+st.title("🚚 Análisis de Satisfacción - Proceso de Entrega de Mercado")
 st.markdown("""
 Esta sección presenta el análisis detallado de la satisfacción con el proceso de entrega de mercados,
 incluyendo aspectos como ciclo de menús, notificación, tiempos de revisión y atención del personal.
@@ -35,6 +82,9 @@ selected_comuna = None
 selected_barrio = None
 selected_nodo = None
 
+# Sidebar con iconos
+st.sidebar.title("🔧 Filtros (Desactivados)")
+
 # Intentar obtener el rango de fechas (desactivado)
 if 'fecha' in df.columns:
     df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
@@ -45,7 +95,7 @@ if 'fecha' in df.columns:
         max_date = valid_dates['fecha'].max().date()
         
         date_range = st.sidebar.date_input(
-            "Rango de fechas (Desactivado)",
+            "📅 Rango de fechas (Desactivado)",
             [min_date, max_date],
             min_value=min_date,
             max_value=max_date
@@ -54,37 +104,61 @@ if 'fecha' in df.columns:
 # Filtro por ubicación geográfica (desactivados)
 if 'comuna' in df.columns:
     all_comunas = ["Todas"] + sorted([str(x) for x in df['comuna'].unique() if pd.notna(x)])
-    selected_comuna = st.sidebar.selectbox("Comuna (Desactivado)", all_comunas)
+    selected_comuna = st.sidebar.selectbox("🏘️ Comuna (Desactivado)", all_comunas)
 
 if 'barrio' in df.columns:
     all_barrios = ["Todos"] + sorted([str(x) for x in df['barrio'].unique() if pd.notna(x)])
-    selected_barrio = st.sidebar.selectbox("Barrio (Desactivado)", all_barrios)
+    selected_barrio = st.sidebar.selectbox("🏠 Barrio (Desactivado)", all_barrios)
 
 if 'nodo' in df.columns:
     all_nodos = ["Todos"] + sorted([str(x) for x in df['nodo'].unique() if pd.notna(x)])
-    selected_nodo = st.sidebar.selectbox("Nodo (Desactivado)", all_nodos)
+    selected_nodo = st.sidebar.selectbox("📍 Nodo (Desactivado)", all_nodos)
 
 # Información sobre filtros desactivados
-st.sidebar.info("Los filtros están desactivados temporalmente para mostrar todos los datos disponibles.")
+st.sidebar.info("ℹ️ Los filtros están desactivados temporalmente para mostrar todos los datos disponibles.")
 
 # NO aplicar filtros - Usar el DataFrame completo
 filtered_df = df.copy()  # Usar todos los datos sin filtrar
 
 # Mostrar número de encuestas
-st.sidebar.metric("Total de encuestas", len(filtered_df))
+st.sidebar.metric("📊 Total de encuestas", len(filtered_df))
 
-# Mapeo de las columnas del proceso de entrega
+# Mapeo de las columnas del proceso de entrega con iconos
 entrega_cols = {
-    '23ciclo_menus': 'El ciclo de menús establecido por el proyecto',
-    '24notificacion_telefonica': 'La notificación telefónica para informar fecha y hora de entrega',
-    '25tiempo_revision_alimentos': 'El tiempo para revisar los alimentos al recibirlos',
-    '26tiempo_entrega_mercdos': 'El tiempo entre las entregas de los mercados (10 días hábiles)',
-    '27tiempo_demora_proveedor': 'El tiempo de respuesta para reposiciones o ajustes',
-    '28actitud_funcionario_logistico': 'La actitud y disposición del funcionario logístico'
+    '23ciclo_menus': {
+        'description': 'El ciclo de menús establecido por el proyecto',
+        'icon': '📋',
+        'title_with_icon': '📋 Ciclo de Menús'
+    },
+    '24notificacion_telefonica': {
+        'description': 'La notificación telefónica para informar fecha y hora de entrega',
+        'icon': '📞',
+        'title_with_icon': '📞 Notificación Telefónica'
+    },
+    '25tiempo_revision_alimentos': {
+        'description': 'El tiempo para revisar los alimentos al recibirlos',
+        'icon': '⏰',
+        'title_with_icon': '⏰ Tiempo de Revisión'
+    },
+    '26tiempo_entrega_mercdos': {
+        'description': 'El tiempo entre las entregas de los mercados (10 días hábiles)',
+        'icon': '📅',
+        'title_with_icon': '📅 Frecuencia de Entregas'
+    },
+    '27tiempo_demora_proveedor': {
+        'description': 'El tiempo de respuesta para reposiciones o ajustes',
+        'icon': '🔄',
+        'title_with_icon': '🔄 Tiempo de Respuesta'
+    },
+    '28actitud_funcionario_logistico': {
+        'description': 'La actitud y disposición del funcionario logístico',
+        'icon': '👥',
+        'title_with_icon': '👥 Actitud del Personal'
+    }
 }
 
 # Análisis de satisfacción por aspectos del proceso
-st.header("Satisfacción con el Proceso de Entrega")
+st.header("📊 Satisfacción con el Proceso de Entrega")
 
 # Comprobar si existen las columnas
 available_cols = [col for col in entrega_cols.keys() if col in filtered_df.columns]
@@ -94,7 +168,7 @@ if not available_cols:
     st.stop()
 
 # Crear tabs para diferentes aspectos del proceso
-logistica_tab, tiempos_tab, personal_tab = st.tabs(["Logística", "Tiempos", "Personal"])
+logistica_tab, tiempos_tab, personal_tab = st.tabs(["📋 Logística", "⏰ Tiempos", "👥 Personal"])
 
 # Columnas para cada tab
 logistica_cols = ['23ciclo_menus', '24notificacion_telefonica']
@@ -105,25 +179,29 @@ with logistica_tab:
     logistica_available = [col for col in logistica_cols if col in available_cols]
     
     if logistica_available:
-        st.subheader("Satisfacción con Aspectos Logísticos")
+        st.subheader("📋 Satisfacción con Aspectos Logísticos")
         
         col1, col2 = st.columns(2)
         
         # Primera columna (si existe)
         if len(logistica_available) > 0:
-            fig1 = plot_question_satisfaction(filtered_df, logistica_available[0], entrega_cols[logistica_available[0]])
+            col_info = entrega_cols[logistica_available[0]]
+            fig1 = plot_question_satisfaction(filtered_df, logistica_available[0], col_info['description'])
             if fig1:
-                col1.plotly_chart(fig1, use_container_width=True)
+                fig1_horizontal = make_horizontal_chart(fig1, col_info['title_with_icon'])
+                col1.plotly_chart(fig1_horizontal, use_container_width=True)
             else:
-                col1.info(f"No hay datos suficientes para '{entrega_cols[logistica_available[0]]}'")
+                col1.info(f"No hay datos suficientes para '{col_info['description']}'")
         
         # Segunda columna (si existe)
         if len(logistica_available) > 1:
-            fig2 = plot_question_satisfaction(filtered_df, logistica_available[1], entrega_cols[logistica_available[1]])
+            col_info2 = entrega_cols[logistica_available[1]]
+            fig2 = plot_question_satisfaction(filtered_df, logistica_available[1], col_info2['description'])
             if fig2:
-                col2.plotly_chart(fig2, use_container_width=True)
+                fig2_horizontal = make_horizontal_chart(fig2, col_info2['title_with_icon'])
+                col2.plotly_chart(fig2_horizontal, use_container_width=True)
             else:
-                col2.info(f"No hay datos suficientes para '{entrega_cols[logistica_available[1]]}'")
+                col2.info(f"No hay datos suficientes para '{col_info2['description']}'")
     else:
         st.info("No se encontraron datos de satisfacción con aspectos logísticos.")
 
@@ -131,15 +209,17 @@ with tiempos_tab:
     tiempos_available = [col for col in tiempos_cols if col in available_cols]
     
     if tiempos_available:
-        st.subheader("Satisfacción con Tiempos")
+        st.subheader("⏰ Satisfacción con Tiempos")
         
         # Mostrar gráficos
         for i, col in enumerate(tiempos_available):
-            fig = plot_question_satisfaction(filtered_df, col, entrega_cols[col])
+            col_info = entrega_cols[col]
+            fig = plot_question_satisfaction(filtered_df, col, col_info['description'])
             if fig:
-                st.plotly_chart(fig, use_container_width=True)
+                fig_horizontal = make_horizontal_chart(fig, col_info['title_with_icon'])
+                st.plotly_chart(fig_horizontal, use_container_width=True)
             else:
-                st.info(f"No hay datos suficientes para '{entrega_cols[col]}'")
+                st.info(f"No hay datos suficientes para '{col_info['description']}'")
     else:
         st.info("No se encontraron datos de satisfacción con tiempos.")
 
@@ -147,29 +227,42 @@ with personal_tab:
     personal_available = [col for col in personal_cols if col in available_cols]
     
     if personal_available:
-        st.subheader("Satisfacción con el Personal")
+        st.subheader("👥 Satisfacción con el Personal")
         
         # Mostrar gráficos
         for col in personal_available:
-            fig = plot_question_satisfaction(filtered_df, col, entrega_cols[col])
+            col_info = entrega_cols[col]
+            fig = plot_question_satisfaction(filtered_df, col, col_info['description'])
             if fig:
-                st.plotly_chart(fig, use_container_width=True)
+                fig_horizontal = make_horizontal_chart(fig, col_info['title_with_icon'])
+                st.plotly_chart(fig_horizontal, use_container_width=True)
             else:
-                st.info(f"No hay datos suficientes para '{entrega_cols[col]}'")
+                st.info(f"No hay datos suficientes para '{col_info['description']}'")
     else:
         st.info("No se encontraron datos de satisfacción con el personal.")
 
 # Análisis de preguntas sí/no
-st.header("Cumplimiento y Comunicación")
+st.header("✅ Cumplimiento y Comunicación")
 
 yes_no_fig = plot_yes_no_questions(filtered_df)
 if yes_no_fig:
+    # Aplicar fondo blanco a los gráficos de sí/no también
+    yes_no_fig.update_layout(
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        title={
+            'text': '✅ Análisis de Cumplimiento (Sí/No)',
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 16}
+        }
+    )
     st.plotly_chart(yes_no_fig, use_container_width=True)
 else:
     st.info("No hay datos suficientes para el análisis de preguntas sí/no.")
 
 # Análisis de Comedores con Insatisfacción
-st.header("Comedores con Niveles de Insatisfacción")
+st.header("⚠️ Comedores con Niveles de Insatisfacción")
 
 # Verificar que existan las columnas de satisfacción y la columna de identificación del comedor
 satisfaccion_cols = [col for col in entrega_cols.keys() if col in filtered_df.columns]
@@ -212,7 +305,7 @@ else:
                 if comedor not in comedores_insatisfechos:
                     comedores_insatisfechos[comedor] = {}
                 
-                comedores_insatisfechos[comedor][entrega_cols[col]] = count
+                comedores_insatisfechos[comedor][entrega_cols[col]['description']] = count
     
     # Mostrar resultados
     if comedores_insatisfechos:
@@ -223,23 +316,23 @@ else:
         resultado_df = resultado_df.fillna(0)
         
         # Agregar columna de total
-        resultado_df['Total Insatisfacciones'] = resultado_df.sum(axis=1)
+        resultado_df['📊 Total Insatisfacciones'] = resultado_df.sum(axis=1)
         
         # Ordenar por total de insatisfacciones (descendente)
-        resultado_df = resultado_df.sort_values('Total Insatisfacciones', ascending=False)
+        resultado_df = resultado_df.sort_values('📊 Total Insatisfacciones', ascending=False)
         
         # Mostrar como tabla
-        st.write("Comedores con reportes de insatisfacción en el proceso de entrega:")
+        st.write("🍽️ Comedores con reportes de insatisfacción en el proceso de entrega:")
         st.dataframe(resultado_df, use_container_width=True)
         
         # Conclusión textual sobre comedores con insatisfacciones
-        st.subheader("Comedores con problemas de insatisfacción")
+        st.subheader("🎯 Comedores con problemas de insatisfacción")
         
         # Tomar los primeros comedores (los más problemáticos)
         top_comedores = resultado_df.head(5)
         
         # Crear conclusión textual
-        st.markdown("### Resumen de hallazgos")
+        st.markdown("### 📈 Resumen de hallazgos")
         
         # Texto introductorio
         st.markdown(f"""
@@ -253,33 +346,33 @@ else:
             # Obtener los aspectos con insatisfacción para este comedor
             aspectos_insatisfechos = []
             for aspecto, valor in row.items():
-                if aspecto != 'Total Insatisfacciones' and valor > 0:
+                if aspecto != '📊 Total Insatisfacciones' and valor > 0:
                     aspectos_insatisfechos.append(aspecto)
             
             aspectos_texto = ", ".join(aspectos_insatisfechos)
             st.markdown(f"""
-            - **{comedor}**: {int(row['Total Insatisfacciones'])} reportes de insatisfacción.
-              Aspectos problemáticos: {aspectos_texto}
+            - **🏪 {comedor}**: {int(row['📊 Total Insatisfacciones'])} reportes de insatisfacción.
+              **Aspectos problemáticos:** {aspectos_texto}
             """)
         
         # Recomendaciones generales
         st.markdown("""
-        ### Recomendaciones
+        ### 🎯 Recomendaciones
         
         Se sugiere implementar un plan de seguimiento especial para estos comedores, 
         con énfasis en los aspectos señalados como problemáticos. Es recomendable:
         
-        1. Mejorar la comunicación con estos comedores respecto a fechas y horarios de entrega
-        2. Revisar los tiempos de entrega y ajustarlos según las necesidades específicas de cada comedor
-        3. Proporcionar capacitación adicional al personal que atiende estos comedores
-        4. Implementar un sistema de seguimiento posterior a la entrega para verificar la satisfacción
-        5. Establecer un canal directo de comunicación para resolver problemas de manera ágil
+        1. 📞 **Mejorar la comunicación** con estos comedores respecto a fechas y horarios de entrega
+        2. ⏰ **Revisar los tiempos** de entrega y ajustarlos según las necesidades específicas de cada comedor
+        3. 👥 **Proporcionar capacitación adicional** al personal que atiende estos comedores
+        4. 📋 **Implementar un sistema de seguimiento** posterior a la entrega para verificar la satisfacción
+        5. 🔄 **Establecer un canal directo** de comunicación para resolver problemas de manera ágil
         """)
     else:
-        st.success("No se encontraron comedores con reportes de insatisfacción en el proceso de entrega.")
+        st.success("✅ No se encontraron comedores con reportes de insatisfacción en el proceso de entrega.")
 
 # Análisis de sugerencias de mejora
-st.header("Sugerencias de Mejora")
+st.header("💡 Sugerencias de Mejora")
 
 # Verificar si existe la columna de sugerencias
 if '32aspectos_de_mejora' in filtered_df.columns:
@@ -294,14 +387,14 @@ if '32aspectos_de_mejora' in filtered_df.columns:
         sugerencias_ordenadas = sugerencias.sort_values(key=lambda x: x.str.len(), ascending=False)
         for i, sugerencia in enumerate(sugerencias_ordenadas.head(5), 1):
             if len(sugerencia) > 10:  # Solo mostrar sugerencias significativas
-                st.markdown(f"**{i}. Sugerencia de mejora:** {sugerencia}")
+                st.markdown(f"**💭 {i}. Sugerencia de mejora:** {sugerencia}")
     else:
         st.info("No se han registrado sugerencias de mejora.")
 else:
     st.info("No se encontró la columna de sugerencias de mejora.")
 
 # Conclusiones y recomendaciones
-st.header("Conclusiones y Recomendaciones")
+st.header("🎯 Conclusiones y Recomendaciones")
 
 # Análisis automático basado en los datos
 if available_cols:
@@ -318,6 +411,10 @@ if available_cols:
     max_aspect = max(satisfaction_means, key=satisfaction_means.get)
     max_score = satisfaction_means[max_aspect]
     
+    # Obtener información con iconos
+    min_info = entrega_cols[min_aspect]
+    max_info = entrega_cols[max_aspect]
+    
     # Calcular si el proceso es percibido como sencillo
     if '31pasos_recepcion_mercado' in filtered_df.columns:
         proceso_sencillo = (filtered_df['31pasos_recepcion_mercado'].astype(str).str.lower() == 'sencillo').mean() * 100
@@ -326,26 +423,27 @@ if available_cols:
     
     # Mostrar conclusiones
     st.markdown(f"""
-    Basado en el análisis de los datos:
+    📈 **Basado en el análisis de los datos:**
     
-    - El aspecto con **mayor satisfacción** es "{entrega_cols[max_aspect]}" con un puntaje promedio de **{max_score:.2f}/5**.
-    - El aspecto con **menor satisfacción** es "{entrega_cols[min_aspect]}" con un puntaje promedio de **{min_score:.2f}/5**.
+    - 🏆 El aspecto con **mayor satisfacción** es "{max_info['icon']} {max_info['description']}" con un puntaje promedio de **{max_score:.2f}/5**.
+    - ⚠️ El aspecto con **menor satisfacción** es "{min_info['icon']} {min_info['description']}" con un puntaje promedio de **{min_score:.2f}/5**.
     """)
     
     if proceso_sencillo is not None:
-        st.markdown(f"- El **{proceso_sencillo:.1f}%** de los encuestados considera que el proceso de recepción es **sencillo**.")
+        st.markdown(f"- ✅ El **{proceso_sencillo:.1f}%** de los encuestados considera que el proceso de recepción es **sencillo**.")
     
-    st.markdown("""
-    **Recomendaciones:**
+    st.markdown(f"""
+    **🎯 Recomendaciones:**
     
-    - Revisar y optimizar los aspectos con menor satisfacción
-    - Mantener un canal de comunicación abierto con los beneficiarios
-    - Evaluar posibles ajustes en los tiempos y la logística del proceso
-    - Proporcionar capacitación adicional al personal de entrega
+    - 🔧 **Revisar y optimizar** los aspectos relacionados con "{min_info['icon']} {min_info['description']}"
+    - 📞 **Mantener un canal de comunicación** abierto con los beneficiarios
+    - ⏰ **Evaluar posibles ajustes** en los tiempos y la logística del proceso
+    - 👥 **Proporcionar capacitación adicional** al personal de entrega
+    - ✅ **Mantener las buenas prácticas** relacionadas con "{max_info['icon']} {max_info['description']}"
     """)
 else:
-    st.info("No hay datos suficientes para generar conclusiones y recomendaciones.")
+    st.info("ℹ️ No hay datos suficientes para generar conclusiones y recomendaciones.")
 
 # Footer
 st.markdown("---")
-st.markdown("Dashboard de Análisis de la Encuesta de Satisfacción | Sección: Proceso de Entrega de Mercado")
+st.markdown("📊 Dashboard de Análisis de la Encuesta de Satisfacción | 🚚 Sección: Proceso de Entrega de Mercado")
