@@ -73,7 +73,8 @@ def plot_question_satisfaction_visual(df, question_col, question_text):
     
     # Intentar mapear y ordenar
     count_df['orden'] = count_df['Respuesta'].map(satisfaction_order)
-    count_df = count_df.sort_values('orden', na_last=True)
+    # Ordenar poniendo los NaN al final
+    count_df = count_df.sort_values('orden', na_position='last')
     
     # Colores degradados y llamativos
     colors = {
@@ -382,7 +383,7 @@ else:
     id_comedor_candidates = ['nombre_comedor', 'comedor', 'id_comedor', 'nombre del comedor']
     id_comedor_col = next((col for col in id_comedor_candidates if col in filtered_df_pagina.columns), None)
 
-    satisfaction_numeric_cols = [col for col in abarrotes_cols_map.keys() if col in filtered_df_pagina.columns and pd.api.types.is_numeric_dtype(filtered_df_pagina[col_key].dtype)]
+    satisfaction_numeric_cols = [col for col in abarrotes_cols_map.keys() if col in filtered_df_pagina.columns and pd.api.types.is_numeric_dtype(filtered_df_pagina[col])]
 
     if not satisfaction_numeric_cols:
         st.info("ℹ️ No hay columnas numéricas de satisfacción de abarrotes para analizar insatisfacción.")
@@ -443,7 +444,7 @@ else:
     
     try:
         satisfaction_means = {}
-        valid_cols_for_mean = [col for col in abarrotes_cols_map.keys() if col in filtered_df_pagina.columns and pd.api.types.is_numeric_dtype(filtered_df_pagina[col_key].dtype)]
+        valid_cols_for_mean = [col for col in abarrotes_cols_map.keys() if col in filtered_df_pagina.columns and pd.api.types.is_numeric_dtype(filtered_df_pagina[col])]
 
         if valid_cols_for_mean:
             for col in valid_cols_for_mean:
