@@ -59,7 +59,6 @@ def plot_question_satisfaction_improved(df, col_key, col_description):
             hoverlabel=dict(
                 bgcolor='rgba(255,255,255,0.95)',
                 bordercolor='rgba(102,126,234,0.3)',
-                borderwidth=1,
                 font=dict(color='#2d3748', size=12)
             )
         )
