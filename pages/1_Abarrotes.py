@@ -9,7 +9,7 @@ from utils.data_processing import ( # Asegúrate que estas funciones existan en 
 )
 
 # Función modificada para convertir gráficos a barras horizontales
-def make_horizontal_chart(fig):
+def make_horizontal_chart(fig, title_with_icon=None):
     """
     Convierte cualquier gráfico de barras verticales a horizontales y aplica fondo blanco
     """
@@ -30,13 +30,24 @@ def make_horizontal_chart(fig):
                     trace.orientation = 'h'
         
         # Actualizar layout para fondo blanco y ajustar ejes
-        fig.update_layout(
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            xaxis_title="Número de Respuestas",
-            yaxis_title="Categorías de Respuesta",
-            yaxis={'categoryorder': 'total ascending'}  # Ordenar por valores
-        )
+        layout_updates = {
+            'plot_bgcolor': 'white',
+            'paper_bgcolor': 'white',
+            'xaxis_title': "Número de Respuestas",
+            'yaxis_title': "Categorías de Respuesta",
+            'yaxis': {'categoryorder': 'total ascending'}  # Ordenar por valores
+        }
+        
+        # Agregar título con icono si se proporciona
+        if title_with_icon:
+            layout_updates['title'] = {
+                'text': title_with_icon,
+                'x': 0.5,
+                'xanchor': 'center',
+                'font': {'size': 16}
+            }
+        
+        fig.update_layout(**layout_updates)
         
         return fig
         
@@ -52,7 +63,7 @@ st.set_page_config(
 )
 
 # Título y descripción
-st.title("Análisis de Satisfacción - Abarrotes")
+st.title("📦 Análisis de Satisfacción - Abarrotes")
 st.markdown("""
 Esta sección presenta el análisis detallado de la satisfacción con los abarrotes entregados,
 incluyendo fechas de vencimiento, tipo de empaque y correspondencia con la lista de mercado.
@@ -76,7 +87,7 @@ if df_pagina is None or df_pagina.empty:
 
 # --- Sidebar para Filtros (similar a Home.py) ---
 # Conservamos la sidebar pero no la usaremos para filtrar los datos
-st.sidebar.title("Filtros (Desactivados)")
+st.sidebar.title("🔧 Filtros (Desactivados)")
 date_range_selected = None
 selected_comuna = "Todas"
 selected_barrio = "Todos"
@@ -95,7 +106,7 @@ if 'fecha' in df_pagina.columns and pd.api.types.is_datetime64_any_dtype(df_pagi
                 default_end_date = max_date_dt.date()
                 # Usar una KEY única para este filtro si se repite en otras páginas
                 date_range_selected = st.sidebar.date_input(
-                    "Rango de fechas (Desactivado)",
+                    "📅 Rango de fechas (Desactivado)",
                     value=[default_start_date, default_end_date],
                     min_value=default_start_date,
                     max_value=default_end_date,
@@ -109,28 +120,28 @@ if 'fecha' in df_pagina.columns and pd.api.types.is_datetime64_any_dtype(df_pagi
 # Filtro por ubicación
 if 'comuna' in df_pagina.columns:
     all_comunas = ["Todas"] + sorted([str(x) for x in df_pagina['comuna'].dropna().unique()])
-    selected_comuna = st.sidebar.selectbox("Comuna (Desactivado)", all_comunas, index=0, key='comuna_filter_abarrotes')
+    selected_comuna = st.sidebar.selectbox("🏘️ Comuna (Desactivado)", all_comunas, index=0, key='comuna_filter_abarrotes')
 # else: st.sidebar.info("Columna 'comuna' no disponible.") # Evitar repetir mensajes
 
 if 'barrio' in df_pagina.columns:
     all_barrios = ["Todos"] + sorted([str(x) for x in df_pagina['barrio'].dropna().unique()])
-    selected_barrio = st.sidebar.selectbox("Barrio (Desactivado)", all_barrios, index=0, key='barrio_filter_abarrotes')
+    selected_barrio = st.sidebar.selectbox("🏠 Barrio (Desactivado)", all_barrios, index=0, key='barrio_filter_abarrotes')
 # else: st.sidebar.info("Columna 'barrio' no disponible.")
 
 if 'nodo' in df_pagina.columns:
     all_nodos = ["Todos"] + sorted([str(x) for x in df_pagina['nodo'].dropna().unique()])
-    selected_nodo = st.sidebar.selectbox("Nodo (Desactivado)", all_nodos, index=0, key='nodo_filter_abarrotes')
+    selected_nodo = st.sidebar.selectbox("📍 Nodo (Desactivado)", all_nodos, index=0, key='nodo_filter_abarrotes')
 # else: st.sidebar.info("Columna 'nodo' no disponible.")
 
 # Información sobre filtros desactivados
-st.sidebar.info("Los filtros están desactivados temporalmente para mostrar todos los datos disponibles.")
+st.sidebar.info("ℹ️ Los filtros están desactivados temporalmente para mostrar todos los datos disponibles.")
 
 # --- NO APLICAR FILTROS - Usar el DataFrame completo ---
 # En lugar de filtrar, simplemente usamos el DataFrame completo
 filtered_df_pagina = df_pagina.copy()  # Usar todos los datos sin filtrar
 
 # Mostrar métrica de encuestas para esta página
-st.sidebar.metric("Total de Encuestas (Abarrotes)", len(filtered_df_pagina))
+st.sidebar.metric("📊 Total de Encuestas (Abarrotes)", len(filtered_df_pagina))
 
 
 # --- Contenido de la Página (si hay datos) ---
@@ -141,15 +152,27 @@ else:
     print(f"INFO 1_Abarrotes.py: Mostrando contenido con {len(filtered_df_pagina)} filas totales.")
     # --- Análisis de Abarrotes ---
 
-    # Mapeo de las columnas de abarrotes (usar COL_DESCRIPTIONS si es posible)
+    # Mapeo de las columnas de abarrotes con iconos (usar COL_DESCRIPTIONS si es posible)
     abarrotes_cols_map = {
-        '9fecha_vencimiento': COL_DESCRIPTIONS.get('9fecha_vencimiento', 'Fecha de vencimiento'),
-        '10tipo_empaque': COL_DESCRIPTIONS.get('10tipo_empaque', 'Tipo de empaque'),
-        '11productos_iguales_lista_mercado': COL_DESCRIPTIONS.get('11productos_iguales_lista_mercado', 'Correspondencia con lista')
+        '9fecha_vencimiento': {
+            'description': COL_DESCRIPTIONS.get('9fecha_vencimiento', 'Fecha de vencimiento'),
+            'icon': '📅',
+            'title_with_icon': '📅 Satisfacción con Fechas de Vencimiento'
+        },
+        '10tipo_empaque': {
+            'description': COL_DESCRIPTIONS.get('10tipo_empaque', 'Tipo de empaque'),
+            'icon': '📦',
+            'title_with_icon': '📦 Satisfacción con Tipo de Empaque'
+        },
+        '11productos_iguales_lista_mercado': {
+            'description': COL_DESCRIPTIONS.get('11productos_iguales_lista_mercado', 'Correspondencia con lista'),
+            'icon': '📋',
+            'title_with_icon': '📋 Correspondencia con Lista de Mercado'
+        }
     }
 
     # Análisis de satisfacción por pregunta
-    st.header("Satisfacción con los Abarrotes")
+    st.header("📊 Satisfacción con los Abarrotes")
 
     # Comprobar si existen las columnas de abarrotes y tienen datos válidos (numéricos o etiquetas)
     # Usar .notna() porque la columna _label puede existir pero estar llena de NaNs si la conversión falló
@@ -173,7 +196,10 @@ else:
         col_index = 0
 
         for col_key in valid_display_cols:
-            col_description = abarrotes_cols_map[col_key]
+            col_info = abarrotes_cols_map[col_key]
+            col_description = col_info['description']
+            title_with_icon = col_info['title_with_icon']
+            
             # Seleccionar la columna correcta (priorizar _label)
             plot_col = col_key + '_label' if col_key + '_label' in filtered_df_pagina.columns and filtered_df_pagina[col_key + '_label'].notna().any() else col_key
 
@@ -184,8 +210,8 @@ else:
                     fig = plot_question_satisfaction(filtered_df_pagina, col_key, col_description)
                     
                     if fig:
-                        # Convertir a horizontal y aplicar fondo blanco
-                        fig_horizontal = make_horizontal_chart(fig)
+                        # Convertir a horizontal y aplicar fondo blanco con título con icono
+                        fig_horizontal = make_horizontal_chart(fig, title_with_icon)
                         st.plotly_chart(fig_horizontal, use_container_width=True)
                     else:
                         # La función plot_question_satisfaction ya imprime si no hay datos
@@ -198,7 +224,7 @@ else:
 
 
     # --- Análisis de Comedores con Insatisfacción ---
-    st.header("Comedores con Niveles de Insatisfacción Reportados")
+    st.header("⚠️ Comedores con Niveles de Insatisfacción Reportados")
 
     # Verificar columnas necesarias: identificación de comedor y columnas de satisfacción numéricas
     # Intentar encontrar una columna de identificación del comedor
@@ -223,19 +249,19 @@ else:
             insatisfaccion_mask = (analisis_df[satisfaction_numeric_cols] <= 2).any(axis=1)
 
             if not insatisfaccion_mask.any():
-                st.success("No se encontraron reportes de insatisfacción (puntaje <= 2) para Abarrotes con los datos actuales.")
+                st.success("✅ No se encontraron reportes de insatisfacción (puntaje <= 2) para Abarrotes con los datos actuales.")
             else:
                 insatisfechos_df = analisis_df[insatisfaccion_mask]
                 print(f"DEBUG 1_Abarrotes.py: {len(insatisfechos_df)} filas con al menos una insatisfacción encontrada.")
 
                 # Agrupar por comedor y contar cuántas veces aparece cada comedor insatisfecho
                 conteo_comedores = insatisfechos_df[id_comedor_col].value_counts().reset_index()
-                conteo_comedores.columns = ['Comedor', 'Número de Reportes con Insatisfacción']
+                conteo_comedores.columns = ['🏪 Comedor', '📊 Número de Reportes con Insatisfacción']
 
                 # Opcional: Detallar qué aspectos fueron insatisfactorios por comedor (más complejo)
                 # Por ahora, mostrar la tabla de conteo
-                st.write("Comedores con al menos un reporte de insatisfacción (puntaje <= 2) en Abarrotes:")
-                st.dataframe(conteo_comedores.sort_values('Número de Reportes con Insatisfacción', ascending=False), hide_index=True, use_container_width=True)
+                st.write("🍽️ Comedores con al menos un reporte de insatisfacción (puntaje <= 2) en Abarrotes:")
+                st.dataframe(conteo_comedores.sort_values('📊 Número de Reportes con Insatisfacción', ascending=False), hide_index=True, use_container_width=True)
 
                 # Podrías añadir aquí conclusiones textuales como las tenías antes
                 # ...
@@ -246,7 +272,7 @@ else:
 
 
     # --- Conclusiones y recomendaciones ---
-    st.header("Conclusiones y Recomendaciones (Abarrotes)")
+    st.header("💡 Conclusiones y Recomendaciones (Abarrotes)")
     try:
         satisfaction_means = {}
         valid_cols_for_mean = [col for col in abarrotes_cols_map.keys() if col in filtered_df_pagina.columns and pd.api.types.is_numeric_dtype(filtered_df_pagina[col])]
@@ -263,22 +289,24 @@ else:
              max_aspect_col = max(satisfaction_means, key=satisfaction_means.get)
              max_score = satisfaction_means[max_aspect_col]
 
-             min_desc = abarrotes_cols_map.get(min_aspect_col, min_aspect_col)
-             max_desc = abarrotes_cols_map.get(max_aspect_col, max_aspect_col)
+             min_desc = abarrotes_cols_map.get(min_aspect_col, {}).get('description', min_aspect_col)
+             max_desc = abarrotes_cols_map.get(max_aspect_col, {}).get('description', max_aspect_col)
+             min_icon = abarrotes_cols_map.get(min_aspect_col, {}).get('icon', '📊')
+             max_icon = abarrotes_cols_map.get(max_aspect_col, {}).get('icon', '📊')
 
              st.markdown(f"""
-             Basado en el análisis de los datos:
+             📈 **Basado en el análisis de los datos:**
 
-             - El aspecto con **mayor satisfacción** es "{max_desc}" con un puntaje promedio de **{max_score:.2f}/5**.
-             - El aspecto con **menor satisfacción** es "{min_desc}" con un puntaje promedio de **{min_score:.2f}/5**.
+             - 🏆 El aspecto con **mayor satisfacción** es "{max_icon} {max_desc}" con un puntaje promedio de **{max_score:.2f}/5**.
+             - ⚠️ El aspecto con **menor satisfacción** es "{min_icon} {min_desc}" con un puntaje promedio de **{min_score:.2f}/5**.
 
-             **Recomendaciones:**
-             - Centrar esfuerzos de mejora en "{min_desc}".
-             - Mantener las buenas prácticas relacionadas con "{max_desc}".
-             - Realizar seguimiento continuo de la satisfacción para identificar tendencias.
+             **🎯 Recomendaciones:**
+             - 🔧 Centrar esfuerzos de mejora en "{min_icon} {min_desc}".
+             - ✅ Mantener las buenas prácticas relacionadas con "{max_icon} {max_desc}".
+             - 📊 Realizar seguimiento continuo de la satisfacción para identificar tendencias.
              """)
         else:
-             st.info("No hay datos numéricos de satisfacción suficientes para generar conclusiones automáticas.")
+             st.info("ℹ️ No hay datos numéricos de satisfacción suficientes para generar conclusiones automáticas.")
     except Exception as e_conclu:
         st.error(f"Error generando conclusiones: {e_conclu}")
         print(f"ERROR 1_Abarrotes.py - Conclusiones: {e_conclu}")
@@ -286,4 +314,4 @@ else:
 
 # --- Footer ---
 st.markdown("---")
-st.markdown("Dashboard de Análisis de la Encuesta de Satisfacción | Sección: Abarrotes")
+st.markdown("📊 Dashboard de Análisis de la Encuesta de Satisfacción | 📦 Sección: Abarrotes")
