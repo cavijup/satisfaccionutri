@@ -104,20 +104,7 @@ def plot_question_satisfaction_improved(df, col_key, col_description):
         height=320,
         margin=dict(l=10, r=60, t=50, b=10),
         font=dict(family='Inter, system-ui, -apple-system, sans-serif'),
-        showlegend=False,
-        # Sutil sombra y elevación visual
-        annotations=[
-            dict(
-                text='',
-                showarrow=False,
-                xref="paper", yref="paper",
-                x=0, y=0, xanchor='left', yanchor='bottom',
-                bordercolor="rgba(102,126,234,0.1)",
-                borderwidth=1,
-                bgcolor="rgba(255,255,255,0.8)",
-                opacity=0
-            )
-        ]
+        showlegend=False
     )
     
     # Añadir línea decorativa sutil en la parte superior
