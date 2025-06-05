@@ -9,7 +9,111 @@ from utils.data_processing import ( # Asegúrate que estas funciones existan en 
     COL_DESCRIPTIONS
 )
 
-def plot_question_satisfaction_professional(df, question_col, question_text):
+def plot_satisfaction_donut_professional(df, question_col, question_text):
+    """
+    Crea un gráfico de dona profesional para satisfacción
+    """
+    label_col = question_col + '_label'
+    
+    # Determinar columna a usar
+    if label_col in df.columns and df[label_col].notna().any():
+        col_to_use = label_col
+    elif question_col in df.columns:
+        col_to_use = question_col
+    else:
+        return None
+    
+    # Contar frecuencias
+    count_df = df[col_to_use].dropna().value_counts().reset_index()
+    count_df.columns = ['Respuesta', 'Conteo']
+    
+    if count_df.empty:
+        return None
+    
+    # Calcular porcentajes
+    total = count_df['Conteo'].sum()
+    count_df['Porcentaje'] = (count_df['Conteo'] / total * 100).round(1)
+    
+    # Colores profesionales
+    colors = {
+        "MUY INSATISFECHO/A": "#E74C3C",
+        "INSATISFECHO/A": "#F39C12", 
+        "NI SATISFECHO/A NI INSATISFECHO/A": "#F1C40F",
+        "SATISFECHO/A": "#27AE60",
+        "MUY SATISFECHO/A": "#2ECC71",
+        1: "#E74C3C", 2: "#F39C12", 3: "#F1C40F", 4: "#27AE60", 5: "#2ECC71"
+    }
+    
+    # Mapear colores
+    count_df['color'] = count_df['Respuesta'].map(colors)
+    count_df['color'] = count_df['color'].fillna("#95A5A6")
+    
+    # Crear gráfico de dona
+    fig = go.Figure(data=[go.Pie(
+        labels=count_df['Respuesta'],
+        values=count_df['Conteo'],
+        hole=0.6,  # Hace el agujero del dona
+        marker=dict(
+            colors=count_df['color'],
+            line=dict(color='white', width=2)
+        ),
+        textinfo='label+percent',
+        textposition='outside',
+        textfont=dict(size=12, family="Inter"),
+        hovertemplate=(
+            "<b>%{label}</b><br>" +
+            "Cantidad: <b>%{value}</b><br>" +
+            "Porcentaje: <b>%{percent}</b><br>" +
+            "<extra></extra>"
+        )
+    )])
+    
+    # Calcular satisfacción promedio (si es numérico)
+    satisfaccion_promedio = None
+    if question_col in df.columns:
+        numeric_data = pd.to_numeric(df[question_col], errors='coerce')
+        if numeric_data.notna().any():
+            satisfaccion_promedio = numeric_data.mean()
+    
+    # Añadir texto central
+    if satisfaccion_promedio:
+        fig.add_annotation(
+            text=f"<b>{satisfaccion_promedio:.1f}</b><br><span style='font-size:14px'>de 5.0</span>",
+            x=0.5, y=0.5,
+            font=dict(size=24, color="#2C3E50", family="Inter"),
+            showarrow=False
+        )
+    else:
+        fig.add_annotation(
+            text=f"<b>{total}</b><br><span style='font-size:14px'>respuestas</span>",
+            x=0.5, y=0.5,
+            font=dict(size=24, color="#2C3E50", family="Inter"),
+            showarrow=False
+        )
+    
+    # Layout profesional
+    fig.update_layout(
+        title=dict(
+            text=question_text,
+            font=dict(size=18, color='#2C3E50', family="Inter", weight=600),
+            x=0.5
+        ),
+        showlegend=True,
+        legend=dict(
+            orientation="v",
+            yanchor="middle",
+            y=0.5,
+            xanchor="left",
+            x=1.05,
+            font=dict(size=11, family="Inter")
+        ),
+        height=400,
+        margin=dict(l=20, r=150, t=60, b=20),
+        paper_bgcolor='white',
+        plot_bgcolor='white'
+    )
+    
+    return fig
     """
     Crea un gráfico de barras profesional y elegante para la distribución de respuestas.
     """
@@ -198,21 +302,8 @@ def plot_question_satisfaction_professional(df, question_col, question_text):
         ]
     )
     
-    # Agregar línea de promedio si hay datos suficientes
-    if len(count_df) >= 2:
-        promedio = count_df['Conteo'].mean()
-        fig.add_hline(
-            y=promedio,
-            line_dash="dot",
-            line_color="#6C757D",
-            line_width=2,
-            opacity=0.7,
-            annotation_text=f"Promedio: {promedio:.1f}",
-            annotation_position="top right",
-            annotation_font=dict(size=10, color="#6C757D", family="Inter")
-        )
-    
-    return fig
+   
+    return 
 
 # Configuración de la página
 st.set_page_config(
@@ -351,7 +442,7 @@ else:
                 print(f"DEBUG 1_Abarrotes.py: Intentando graficar '{plot_col}' para '{col_description}'")
                 try:
                     # Usar la nueva función profesional en lugar de la original
-                    fig = plot_question_satisfaction_professional(filtered_df_pagina, col_key, col_description)
+                    fig = plot_satisfaction_donut_professional(filtered_df_pagina, col_key, col_description)
                     if fig:
                         st.plotly_chart(fig, use_container_width=True)
                     else:
