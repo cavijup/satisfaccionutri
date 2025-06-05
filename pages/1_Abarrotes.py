@@ -9,7 +9,133 @@ from utils.data_processing import ( # Asegúrate que estas funciones existan en 
     COL_DESCRIPTIONS
 )
 
-def plot_satisfaction_gauge_professional(df, question_col, question_text):
+def plot_satisfaction_horizontal_professional(df, question_col, question_text):
+    """
+    Crea un gráfico de barras horizontales profesional con iconos
+    """
+    label_col = question_col + '_label'
+    
+    # Determinar columna a usar
+    if label_col in df.columns and df[label_col].notna().any():
+        col_to_use = label_col
+    elif question_col in df.columns:
+        col_to_use = question_col
+    else:
+        return None
+    
+    # Contar frecuencias
+    count_df = df[col_to_use].dropna().value_counts().reset_index()
+    count_df.columns = ['Respuesta', 'Conteo']
+    
+    if count_df.empty:
+        return None
+    
+    # Ordenar por satisfacción
+    satisfaction_order = {
+        "MUY INSATISFECHO/A": 1, "INSATISFECHO/A": 2, 
+        "NI SATISFECHO/A NI INSATISFECHO/A": 3,
+        "SATISFECHO/A": 4, "MUY SATISFECHO/A": 5,
+        1: 1, 2: 2, 3: 3, 4: 4, 5: 5
+    }
+    
+    count_df['orden'] = count_df['Respuesta'].map(satisfaction_order)
+    count_df = count_df.sort_values('orden', na_position='last')
+    
+    # Calcular porcentajes
+    total = count_df['Conteo'].sum()
+    count_df['Porcentaje'] = (count_df['Conteo'] / total * 100).round(1)
+    
+    # Colores y emojis
+    colors = {
+        "MUY INSATISFECHO/A": "#E74C3C", "INSATISFECHO/A": "#F39C12",
+        "NI SATISFECHO/A NI INSATISFECHO/A": "#F1C40F",
+        "SATISFECHO/A": "#27AE60", "MUY SATISFECHO/A": "#2ECC71",
+        1: "#E74C3C", 2: "#F39C12", 3: "#F1C40F", 4: "#27AE60", 5: "#2ECC71"
+    }
+    
+    emojis = {
+        "MUY INSATISFECHO/A": "😠", "INSATISFECHO/A": "😕",
+        "NI SATISFECHO/A NI INSATISFECHO/A": "😐",
+        "SATISFECHO/A": "😊", "MUY SATISFECHO/A": "🤩",
+        1: "😠", 2: "😕", 3: "😐", 4: "😊", 5: "🤩"
+    }
+    
+    count_df['color'] = count_df['Respuesta'].map(colors).fillna("#95A5A6")
+    count_df['emoji'] = count_df['Respuesta'].map(emojis).fillna("📊")
+    
+    # Crear etiquetas con emojis
+    count_df['etiqueta_completa'] = count_df['emoji'] + " " + count_df['Respuesta'].astype(str)
+    
+    # Crear gráfico horizontal
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        x=count_df['Conteo'],
+        y=count_df['etiqueta_completa'],
+        orientation='h',
+        marker=dict(
+            color=count_df['color'],
+            line=dict(color='white', width=1.5),
+            opacity=0.9
+        ),
+        text=[f'{conteo} ({porcentaje}%)' for conteo, porcentaje in 
+              zip(count_df['Conteo'], count_df['Porcentaje'])],
+        textposition='outside',
+        textfont=dict(size=12, color='#2C3E50', family="Inter"),
+        hovertemplate=(
+            "<b>%{y}</b><br>" +
+            "Cantidad: <b>%{x}</b><br>" +
+            "Porcentaje: <b>%{customdata}%</b><br>" +
+            "<extra></extra>"
+        ),
+        customdata=count_df['Porcentaje'],
+        showlegend=False
+    ))
+    
+    # Layout profesional
+    fig.update_layout(
+        title=dict(
+            text=question_text,
+            font=dict(size=18, color='#2C3E50', family="Inter", weight=600),
+            x=0.5
+        ),
+        xaxis=dict(
+            title="Cantidad de Respuestas",
+            titlefont=dict(size=14, color='#34495E', family="Inter"),
+            tickfont=dict(size=11, color='#34495E', family="Inter"),
+            showgrid=True,
+            gridcolor='#ECF0F1',
+            gridwidth=1,
+            showline=True,
+            linecolor='#BDC3C7'
+        ),
+        yaxis=dict(
+            title="",
+            tickfont=dict(size=12, color='#2C3E50', family="Inter"),
+            showgrid=False,
+            showline=False
+        ),
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        height=300 + (len(count_df) * 20),  # Altura dinámica
+        margin=dict(l=200, r=100, t=80, b=60),
+        annotations=[
+            dict(
+                text=f"Total: {total} respuestas",
+                xref="paper", yref="paper",
+                x=0.02, y=0.98,
+                xanchor='left', yanchor='top',
+                showarrow=False,
+                font=dict(size=11, color="#7F8C8D", family="Inter"),
+                bgcolor="rgba(236, 240, 241, 0.8)",
+                bordercolor="#BDC3C7",
+                borderwidth=1,
+                borderpad=4
+            )
+        ]
+    )
+    
+    return fig
     """
     Crea un medidor/gauge profesional para satisfacción promedio
     """
@@ -536,7 +662,7 @@ else:
                 print(f"DEBUG 1_Abarrotes.py: Intentando graficar '{plot_col}' para '{col_description}'")
                 try:
                     # Usar la nueva función profesional en lugar de la original
-                    fig = plot_satisfaction_gauge_professional(filtered_df_pagina, col_key, col_description)
+                    fig = plot_satisfaction_horizontal_professional(filtered_df_pagina, col_key, col_description)
                     if fig:
                         st.plotly_chart(fig, use_container_width=True)
                     else:
