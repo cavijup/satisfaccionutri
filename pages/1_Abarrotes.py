@@ -5,10 +5,10 @@ import plotly.graph_objects as go
 from utils.data_loader import load_data, get_filtered_data
 from utils.data_processing import COL_DESCRIPTIONS
 
-# Función mejorada para gráficos de barras profesionales
+# Función de diseño minimalista y ultra profesional
 def plot_question_satisfaction_improved(df, col_key, col_description):
     """
-    Crea un gráfico de barras horizontal profesional para la satisfacción
+    Diseño minimalista premium con elegancia y sofisticación visual
     """
     label_col = col_key + '_label'
     
@@ -28,49 +28,108 @@ def plot_question_satisfaction_improved(df, col_key, col_description):
     # Contar valores y crear DataFrame
     value_counts = data_series.value_counts().reset_index()
     value_counts.columns = ['Respuesta', 'Cantidad']
-    value_counts = value_counts.sort_values('Cantidad', ascending=True)  # Para barras horizontales
+    value_counts = value_counts.sort_values('Cantidad', ascending=True)
     
-    # Crear gráfico de barras horizontal con estilo profesional
+    # Paleta de colores sofisticada y gradiente sutil
+    colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#00f2fe']
+    bar_colors = [colors[i % len(colors)] for i in range(len(value_counts))]
+    
+    # Crear gráfico con diseño minimalista premium
     fig = go.Figure(data=[
         go.Bar(
             y=value_counts['Respuesta'],
             x=value_counts['Cantidad'],
             orientation='h',
             marker=dict(
-                color='#FF6B35',  # Color naranja vibrante
-                line=dict(color='#2C3E50', width=1.5)  # Borde azul oscuro
+                color=bar_colors,
+                opacity=0.85,
+                line=dict(width=0)  # Sin bordes para look minimalista
             ),
-            text=value_counts['Cantidad'],
-            textposition='auto',
-            textfont=dict(color='white', size=12, family='Arial Black'),
-            hovertemplate='<b>%{y}</b><br>Cantidad: %{x}<br><extra></extra>'
+            text=[f'  {val}' for val in value_counts['Cantidad']],
+            textposition='middle right',
+            textfont=dict(
+                color='white', 
+                size=13, 
+                family='Inter, system-ui, -apple-system, sans-serif',
+                weight='600'
+            ),
+            hovertemplate='<b style="color:#2d3748;">%{y}</b><br>' +
+                         '<span style="color:#667eea;">Respuestas:</span> <b>%{x}</b>' +
+                         '<extra></extra>',
+            hoverlabel=dict(
+                bgcolor='rgba(255,255,255,0.95)',
+                bordercolor='rgba(102,126,234,0.3)',
+                borderwidth=1,
+                font=dict(color='#2d3748', size=12)
+            )
         )
     ])
     
-    # Configuración del layout profesional
+    # Layout ultra minimalista y elegante
     fig.update_layout(
         title=dict(
-            text=f"<b>{col_description}</b>",
-            x=0.5,
-            font=dict(size=16, color='#2C3E50', family='Arial Black')
+            text=f'{col_description}',
+            x=0.02,
+            y=0.95,
+            font=dict(
+                size=18, 
+                color='#2d3748', 
+                family='Inter, system-ui, -apple-system, sans-serif',
+                weight='700'
+            )
         ),
         xaxis=dict(
-            title="<b>Cantidad de Respuestas</b>",
-            showgrid=True,
-            gridcolor='rgba(128,128,128,0.2)',
-            title_font=dict(size=12, color='#34495E'),
-            tickfont=dict(size=11, color='#34495E')
+            showgrid=False,
+            showline=False,
+            showticklabels=True,
+            zeroline=False,
+            tickfont=dict(
+                size=11, 
+                color='#718096',
+                family='Inter, system-ui, -apple-system, sans-serif'
+            ),
+            title=''  # Sin título para look minimalista
         ),
         yaxis=dict(
-            title="<b>Nivel de Satisfacción</b>",
-            title_font=dict(size=12, color='#34495E'),
-            tickfont=dict(size=11, color='#34495E')
+            showgrid=False,
+            showline=False,
+            showticklabels=True,
+            zeroline=False,
+            tickfont=dict(
+                size=12, 
+                color='#4a5568',
+                family='Inter, system-ui, -apple-system, sans-serif',
+                weight='500'
+            ),
+            title=''  # Sin título para look minimalista
         ),
-        plot_bgcolor='rgba(248,249,250,0.8)',  # Fondo gris muy claro
-        paper_bgcolor='white',
-        height=400,
-        margin=dict(l=20, r=20, t=60, b=20),
-        font=dict(family='Arial')
+        plot_bgcolor='rgba(0,0,0,0)',  # Transparente total
+        paper_bgcolor='rgba(0,0,0,0)',  # Transparente total
+        height=320,
+        margin=dict(l=10, r=60, t=50, b=10),
+        font=dict(family='Inter, system-ui, -apple-system, sans-serif'),
+        showlegend=False,
+        # Sutil sombra y elevación visual
+        annotations=[
+            dict(
+                text='',
+                showarrow=False,
+                xref="paper", yref="paper",
+                x=0, y=0, xanchor='left', yanchor='bottom',
+                bordercolor="rgba(102,126,234,0.1)",
+                borderwidth=1,
+                bgcolor="rgba(255,255,255,0.8)",
+                opacity=0
+            )
+        ]
+    )
+    
+    # Añadir línea decorativa sutil en la parte superior
+    fig.add_shape(
+        type="line",
+        x0=0, y0=1, x1=1, y1=1,
+        xref="paper", yref="paper",
+        line=dict(color="rgba(102,126,234,0.2)", width=2)
     )
     
     return fig
