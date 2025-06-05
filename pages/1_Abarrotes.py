@@ -9,10 +9,10 @@ from utils.data_processing import ( # Asegúrate que estas funciones existan en 
     COL_DESCRIPTIONS
 )
 
-# Nueva función con diseño cristal y barras horizontales
-def plot_question_satisfaction_glass(df, col_key, col_description):
+# Función modificada para barras horizontales y fondo blanco
+def plot_question_satisfaction(df, col_key, col_description):
     """
-    Crea un gráfico de barras horizontales con efecto cristal translúcido
+    Crea un gráfico de barras horizontales con fondo blanco
     """
     try:
         # Determinar qué columna usar (priorizar _label)
@@ -49,141 +49,68 @@ def plot_question_satisfaction_glass(df, col_key, col_description):
             'Cantidad': value_counts.values
         })
 
-        # Colores cristal translúcidos (manteniendo los colores originales pero con transparencia)
-        glass_colors = [
-            'rgba(231, 76, 60, 0.7)',   # Rojo translúcido
-            'rgba(230, 126, 34, 0.7)',  # Naranja translúcido  
-            'rgba(241, 196, 15, 0.7)',  # Amarillo translúcido
-            'rgba(46, 204, 113, 0.7)',  # Verde translúcido
-            'rgba(52, 152, 219, 0.7)',  # Azul translúcido
-            'rgba(155, 89, 182, 0.7)',  # Púrpura translúcido
-            'rgba(26, 188, 156, 0.7)',  # Turquesa translúcido
-            'rgba(243, 156, 18, 0.7)'   # Dorado translúcido
-        ]
-
-        # Crear gráfico de barras horizontales con efecto cristal
-        fig = go.Figure()
-
-        # Añadir barras con efecto cristal
-        fig.add_trace(go.Bar(
-            y=chart_df['Respuesta'],
-            x=chart_df['Cantidad'],
+        # Crear gráfico de barras horizontales usando plotly express
+        fig = px.bar(
+            chart_df, 
+            x='Cantidad', 
+            y='Respuesta',
             orientation='h',
-            marker=dict(
-                color=glass_colors[:len(chart_df)],
-                line=dict(
-                    color='rgba(255, 255, 255, 0.8)',
-                    width=2
-                ),
-                # Efecto de patrón sutil para simular cristal
-                pattern=dict(
-                    shape="",
-                    size=6,
-                    solidity=0.1
-                )
-            ),
-            text=chart_df['Cantidad'],
-            textposition='outside',
-            textfont=dict(
-                size=13,
-                color='rgba(44, 62, 80, 0.9)',
-                family="Arial Black"
-            ),
-            hovertemplate='<b style="color: #2C3E50;">%{y}</b><br>' +
-                         '<span style="color: #34495E;">Cantidad: %{x}</span><br>' +
-                         '<span style="color: #34495E;">Porcentaje: %{customdata:.1f}%</span><extra></extra>',
-            customdata=[100 * x / chart_df['Cantidad'].sum() for x in chart_df['Cantidad']],
-            name='Respuestas'
-        ))
+            title=col_description,
+            text='Cantidad'
+        )
 
-        # Layout con diseño cristal
+        # Configurar layout con fondo blanco
         fig.update_layout(
+            # Fondo blanco
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            
+            # Configuración de título
             title=dict(
-                text=f"<b style='color: #2C3E50;'>{col_description}</b>",
+                font=dict(size=16, color='rgba(50, 50, 50, 0.9)'),
                 x=0.5,
-                y=0.95,
-                xanchor='center',
-                yanchor='top',
-                font=dict(
-                    size=17,
-                    color='rgba(44, 62, 80, 0.9)',
-                    family="Arial Black"
-                )
+                xanchor='center'
             ),
             
-            # Fondo cristal translúcido
-            plot_bgcolor='rgba(255, 255, 255, 0.9)',
-            paper_bgcolor='rgba(248, 249, 250, 0.8)',
-            
-            # Configuración de ejes con estilo cristal
+            # Configuración de ejes
             xaxis=dict(
-                title=dict(
-                    text="<b style='color: #2C3E50;'>Número de Respuestas</b>",
-                    font=dict(size=13, color='rgba(44, 62, 80, 0.9)', family="Arial Black")
-                ),
+                title="Número de Respuestas",
                 showgrid=True,
-                gridwidth=1,
-                gridcolor='rgba(255, 255, 255, 0.4)',
+                gridcolor='rgba(200, 200, 200, 0.3)',
                 showline=True,
-                linewidth=2,
-                linecolor='rgba(255, 255, 255, 0.6)',
-                tickfont=dict(size=11, color='rgba(44, 62, 80, 0.9)'),
-                zeroline=True,
-                zerolinewidth=2,
-                zerolinecolor='rgba(255, 255, 255, 0.6)'
+                linecolor='rgba(100, 100, 100, 0.8)',
+                tickfont=dict(color='rgba(70, 70, 70, 0.9)')
             ),
             
             yaxis=dict(
-                title=dict(
-                    text="<b style='color: #2C3E50;'>Categorías de Respuesta</b>",
-                    font=dict(size=13, color='rgba(44, 62, 80, 0.9)', family="Arial Black")
-                ),
-                showgrid=False,
+                title="Categorías de Respuesta",
                 showline=True,
-                linewidth=2,
-                linecolor='rgba(255, 255, 255, 0.6)',
-                tickfont=dict(size=12, color='rgba(44, 62, 80, 0.9)', family="Arial"),
-                categoryorder='total ascending'
+                linecolor='rgba(100, 100, 100, 0.8)',
+                tickfont=dict(color='rgba(70, 70, 70, 0.9)'),
+                categoryorder='total ascending'  # Ordenar por valores
             ),
             
-            # Margenes optimizados
-            margin=dict(l=15, r=55, t=55, b=55),
+            # Margenes
+            margin=dict(l=10, r=50, t=50, b=50),
             
             # Altura dinámica
-            height=max(350, len(chart_df) * 55 + 120),
+            height=max(300, len(chart_df) * 50 + 100),
             
-            # Configuraciones de fuente
-            font=dict(family="Arial", size=11, color="rgba(44, 62, 80, 0.9)"),
-            
-            # Anotación con estilo cristal
-            annotations=[
-                dict(
-                    x=1.05,
-                    y=-0.12,
-                    xref='paper',
-                    yref='paper',
-                    text=f"<b style='color: #7F8C8D;'>Total: {chart_df['Cantidad'].sum()} respuestas</b>",
-                    showarrow=False,
-                    font=dict(size=11, color='rgba(127, 140, 141, 0.8)', family="Arial Black"),
-                    align='right'
-                )
-            ]
+            # Configuración de fuente
+            font=dict(family="Arial", size=10, color="rgba(70, 70, 70, 0.9)")
         )
 
-        # Configurar hover mejorado con estilo cristal
+        # Configurar las barras
         fig.update_traces(
-            hoverlabel=dict(
-                bgcolor="rgba(255, 255, 255, 0.95)",
-                bordercolor="rgba(52, 73, 94, 0.2)",
-                font_size=12,
-                font_family="Arial"
-            )
+            textposition='outside',
+            textfont=dict(size=12, color='rgba(50, 50, 50, 0.9)'),
+            hovertemplate='<b>%{y}</b><br>Cantidad: %{x}<extra></extra>'
         )
 
         return fig
 
     except Exception as e:
-        print(f"ERROR en plot_question_satisfaction_glass para {col_key}: {e}")
+        print(f"ERROR en plot_question_satisfaction para {col_key}: {e}")
         return None
 
 
@@ -323,8 +250,7 @@ else:
             with cols_layout[col_index % num_cols]:
                 print(f"DEBUG 1_Abarrotes.py: Intentando graficar '{plot_col}' para '{col_description}'")
                 try:
-                    # Usar la nueva función con diseño cristal
-                    fig = plot_question_satisfaction_glass(filtered_df_pagina, col_key, col_description)
+                    fig = plot_question_satisfaction(filtered_df_pagina, col_key, col_description) # Pasar col_key, la función usará _label
                     if fig:
                         st.plotly_chart(fig, use_container_width=True)
                     else:
