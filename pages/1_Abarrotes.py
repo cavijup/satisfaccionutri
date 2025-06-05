@@ -2,683 +2,336 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import numpy as np
 from utils.data_loader import load_data, get_filtered_data # Asegúrate que estas funciones existan en data_loader.py
 from utils.data_processing import ( # Asegúrate que estas funciones existan en data_processing.py
-    # plot_question_satisfaction, # Comentamos la función original
+    plot_question_satisfaction,
     # create_wordcloud, # Descomenta si usas wordcloud aquí
     COL_DESCRIPTIONS
 )
 
-def plot_question_satisfaction(df, question_col, question_text):
-    """
-    Crea un gráfico de barras horizontales profesional y limpio
-    """
-    label_col = question_col + '_label'
+# Configuración de colores y estilos mejorados
+COLORS = {
+    'primary': '#2E86AB',      # Azul principal
+    'secondary': '#A23B72',    # Magenta
+    'accent': '#F18F01',       # Naranja
+    'success': '#C73E1D',      # Rojo suave
+    'background': '#FAFAFA',   # Gris muy claro
+    'text': '#2C3E50',         # Gris oscuro
+    'light_gray': '#ECF0F1',   # Gris claro
+    'satisfaction_scale': [
+        '#E74C3C',  # 1 - Muy insatisfecho (rojo)
+        '#F39C12',  # 2 - Insatisfecho (naranja)
+        '#F1C40F',  # 3 - Neutral (amarillo)
+        '#27AE60',  # 4 - Satisfecho (verde claro)
+        '#2ECC71'   # 5 - Muy satisfecho (verde)
+    ]
+}
 
-    # Determinar qué columna usar
-    if label_col in df.columns and df[label_col].notna().any():
-        col_to_use = label_col
-    elif question_col in df.columns:
-        col_to_use = question_col
+# Configuración tipográfica mejorada
+FONT_CONFIG = {
+    'family': 'Inter, system-ui, -apple-system, sans-serif',
+    'title_size': 18,
+    'subtitle_size': 14,
+    'axis_size': 12,
+    'tick_size': 11,
+    'legend_size': 12
+}
+
+def create_enhanced_satisfaction_chart(df, column_key, title, chart_type='bar'):
+    """
+    Crea gráficos de satisfacción con diseño visual mejorado
+    """
+    # Determinar columna a usar (priorizar _label)
+    label_col = column_key + '_label'
+    plot_col = label_col if label_col in df.columns and df[label_col].notna().any() else column_key
+    
+    if plot_col not in df.columns:
+        return None
+        
+    # Filtrar datos válidos
+    valid_data = df[plot_col].dropna()
+    if valid_data.empty:
+        return None
+    
+    # Contar valores y calcular porcentajes
+    if pd.api.types.is_numeric_dtype(valid_data):
+        # Para datos numéricos, mapear a etiquetas
+        satisfaction_map = {1: 'Muy Insatisfecho', 2: 'Insatisfecho', 
+                          3: 'Neutral', 4: 'Satisfecho', 5: 'Muy Satisfecho'}
+        value_counts = valid_data.value_counts().sort_index()
+        labels = [satisfaction_map.get(i, f'Valor {i}') for i in value_counts.index]
+        colors = [COLORS['satisfaction_scale'][i-1] if 1 <= i <= 5 else COLORS['primary'] 
+                 for i in value_counts.index]
     else:
-        # Crear figura vacía
-        fig = go.Figure()
-        fig.add_annotation(
-            text="No hay datos disponibles",
-            xref="paper", yref="paper",
-            x=0.5, y=0.5, xanchor='center', yanchor='middle',
-            showarrow=False, 
-            font=dict(size=16, color="#666666")
-        )
-        fig.update_layout(
-            title=dict(
-                text=question_text,
-                font=dict(size=18, color='#333333'),
-                x=0.5
-            ),
-            height=300
-        )
-        return fig
+        # Para datos categóricos
+        value_counts = valid_data.value_counts()
+        labels = value_counts.index.tolist()
+        colors = COLORS['satisfaction_scale'][:len(labels)]
+    
+    values = value_counts.values
+    percentages = (values / values.sum() * 100).round(1)
+    
+    if chart_type == 'donut':
+        return create_donut_chart(labels, values, percentages, colors, title)
+    else:
+        return create_bar_chart(labels, values, percentages, colors, title)
 
-    # Contar frecuencias de las respuestas
-    count_df = df[col_to_use].dropna().value_counts().reset_index()
-    count_df.columns = ['Respuesta', 'Conteo']
-
-    if count_df.empty:
-        # Figura vacía
-        fig = go.Figure()
-        fig.add_annotation(
-            text="Sin datos válidos",
-            xref="paper", yref="paper",
-            x=0.5, y=0.5, xanchor='center', yanchor='middle',
-            showarrow=False,
-            font=dict(size=16, color="#666666")
-        )
-        fig.update_layout(
-            title=dict(
-                text=question_text,
-                font=dict(size=18, color='#333333'),
-                x=0.5
-            ),
-            height=300
-        )
-        return fig
-
-    # Mapear respuestas para ordenamiento
-    satisfaction_order = {
-        "MUY INSATISFECHO/A": 1,
-        "INSATISFECHO/A": 2, 
-        "NI SATISFECHO/A NI INSATISFECHO/A": 3,
-        "SATISFECHO/A": 4,
-        "MUY SATISFECHO/A": 5,
-        "MUY INSATISFECHO": 1,
-        "INSATISFECHO": 2,
-        "NEUTRAL": 3,
-        "SATISFECHO": 4,
-        "MUY SATISFECHO": 5,
-        1: 1, 2: 2, 3: 3, 4: 4, 5: 5
-    }
-    
-    # Ordenar datos
-    count_df['orden'] = count_df['Respuesta'].map(satisfaction_order)
-    count_df = count_df.sort_values('orden', na_position='first')
-    
-    # Colores profesionales modernos con excelente contraste
-    colors = {
-        "MUY INSATISFECHO/A": "#DC2626",     # Rojo intenso
-        "INSATISFECHO/A": "#EA580C",         # Naranja vibrante
-        "NI SATISFECHO/A NI INSATISFECHO/A": "#D97706", # Ámbar
-        "SATISFECHO/A": "#059669",           # Esmeralda
-        "MUY SATISFECHO/A": "#0D9488",       # Teal
-        "MUY INSATISFECHO": "#DC2626",
-        "INSATISFECHO": "#EA580C",
-        "NEUTRAL": "#D97706",
-        "SATISFECHO": "#059669",
-        "MUY SATISFECHO": "#0D9488",
-        1: "#DC2626", 2: "#EA580C", 3: "#D97706", 4: "#059669", 5: "#0D9488"
-    }
-    
-    # Asignar colores
-    count_df['color'] = count_df['Respuesta'].map(colors)
-    count_df['color'] = count_df['color'].fillna("#6B7280")  # Gris profesional para valores sin mapear
-    
-    # Calcular porcentajes
-    total = count_df['Conteo'].sum()
-    count_df['Porcentaje'] = (count_df['Conteo'] / total * 100).round(1)
-    
-    # Crear el gráfico horizontal
+def create_bar_chart(labels, values, percentages, colors, title):
+    """Crea gráfico de barras con diseño mejorado"""
     fig = go.Figure()
     
+    # Añadir barras con diseño mejorado
     fig.add_trace(go.Bar(
-        x=count_df['Conteo'],
-        y=count_df['Respuesta'],
-        orientation='h',
-        marker=dict(
-            color=count_df['color'],
-            line=dict(color='white', width=2),  # Borde blanco más visible
-            opacity=0.9  # Ligera transparencia para suavizar
-        ),
-        text=[f'{conteo} ({porcentaje}%)' 
-              for conteo, porcentaje in zip(count_df['Conteo'], count_df['Porcentaje'])],
+        x=labels,
+        y=values,
+        text=[f'{v}<br>({p}%)' for v, p in zip(values, percentages)],
         textposition='outside',
-        textfont=dict(size=12, color='#374151', weight='bold'),  # Texto más oscuro y en negrita
-        hovertemplate=(
-            "<b>%{y}</b><br>" +
-            "Cantidad: %{x}<br>" +
-            "Porcentaje: %{customdata}%<br>" +
-            "<extra></extra>"
+        textfont=dict(size=FONT_CONFIG['tick_size'], color=COLORS['text']),
+        marker=dict(
+            color=colors,
+            line=dict(color='rgba(255,255,255,0.8)', width=1),
+            opacity=0.9
         ),
-        customdata=count_df['Porcentaje'],
+        hovertemplate='<b>%{x}</b><br>Respuestas: %{y}<br>Porcentaje: %{text}<extra></extra>',
         showlegend=False
     ))
     
-    # Layout profesional
+    # Configuración del layout mejorado
     fig.update_layout(
         title=dict(
-            text=question_text,
-            font=dict(size=20, color='#1F2937', weight='bold'),  # Título más grande y oscuro
+            text=f'<b>{title}</b>',
             x=0.5,
-            y=0.95
+            y=0.95,
+            xanchor='center',
+            font=dict(size=FONT_CONFIG['title_size'], color=COLORS['text'])
         ),
         xaxis=dict(
-            title=dict(
-                text="Cantidad de Respuestas",
-                font=dict(size=14, color='#374151', weight='bold')
-            ),
-            showgrid=True,
-            gridcolor='rgba(156, 163, 175, 0.3)',  # Grilla más visible
-            gridwidth=1,
-            showline=True,
-            linecolor='#D1D5DB',  # Línea más suave
-            linewidth=1,
-            zeroline=True,
-            zerolinecolor='#9CA3AF',
-            tickfont=dict(color='#374151')
+            title='',
+            tickfont=dict(size=FONT_CONFIG['tick_size'], color=COLORS['text']),
+            gridcolor='rgba(0,0,0,0.1)',
+            linecolor='rgba(0,0,0,0.2)'
         ),
         yaxis=dict(
-            showgrid=False,
-            showline=True,
-            linecolor='#D1D5DB',
-            linewidth=1,
-            tickfont=dict(color='#374151', size=12)
-        ),
-        plot_bgcolor='#FAFAFA',  # Fondo ligeramente gris para contraste
-        paper_bgcolor='white',
-        height=max(300, 60 + (len(count_df) * 50)),
-        margin=dict(l=150, r=100, t=80, b=60),
-        hovermode='y unified',
-        hoverlabel=dict(
-            bgcolor="rgba(31, 41, 55, 0.95)",  # Hover más oscuro
-            bordercolor="white",
-            borderwidth=1,
-            font=dict(size=12, color="white")
-        )
-    )
-    
-    return fig
-    """
-    Crea un gráfico de barras horizontales profesional y limpio
-    """
-    label_col = question_col + '_label'
-
-    # Determinar qué columna usar
-    if label_col in df.columns and df[label_col].notna().any():
-        col_to_use = label_col
-    elif question_col in df.columns:
-        col_to_use = question_col
-    else:
-        # Crear figura vacía
-        fig = go.Figure()
-        fig.add_annotation(
-            text="No hay datos disponibles",
-            xref="paper", yref="paper",
-            x=0.5, y=0.5, xanchor='center', yanchor='middle',
-            showarrow=False, 
-            font=dict(size=16, color="#666666")
-        )
-        fig.update_layout(
-            title=dict(
-                text=question_text,
-                font=dict(size=18, color='#333333'),
-                x=0.5
-            ),
-            height=300
-        )
-        return fig
-
-    # Contar frecuencias de las respuestas
-    count_df = df[col_to_use].dropna().value_counts().reset_index()
-    count_df.columns = ['Respuesta', 'Conteo']
-
-    if count_df.empty:
-        # Figura vacía
-        fig = go.Figure()
-        fig.add_annotation(
-            text="Sin datos válidos",
-            xref="paper", yref="paper",
-            x=0.5, y=0.5, xanchor='center', yanchor='middle',
-            showarrow=False,
-            font=dict(size=16, color="#666666")
-        )
-        fig.update_layout(
-            title=dict(
-                text=question_text,
-                font=dict(size=18, color='#333333'),
-                x=0.5
-            ),
-            height=300
-        )
-        return fig
-
-    # Mapear respuestas para ordenamiento
-    satisfaction_order = {
-        "MUY INSATISFECHO/A": 1,
-        "INSATISFECHO/A": 2, 
-        "NI SATISFECHO/A NI INSATISFECHO/A": 3,
-        "SATISFECHO/A": 4,
-        "MUY SATISFECHO/A": 5,
-        "MUY INSATISFECHO": 1,
-        "INSATISFECHO": 2,
-        "NEUTRAL": 3,
-        "SATISFECHO": 4,
-        "MUY SATISFECHO": 5,
-        1: 1, 2: 2, 3: 3, 4: 4, 5: 5
-    }
-    
-    # Ordenar datos
-    count_df['orden'] = count_df['Respuesta'].map(satisfaction_order)
-    count_df = count_df.sort_values('orden', na_position='first')
-    
-    # Colores profesionales y vivos
-    colors = {
-        "MUY INSATISFECHO/A": "#E53E3E",     # Rojo
-        "INSATISFECHO/A": "#FF8C00",         # Naranja
-        "NI SATISFECHO/A NI INSATISFECHO/A": "#FFD700", # Amarillo
-        "SATISFECHO/A": "#38A169",           # Verde
-        "MUY SATISFECHO/A": "#00B894",       # Verde azulado
-        "MUY INSATISFECHO": "#E53E3E",
-        "INSATISFECHO": "#FF8C00",
-        "NEUTRAL": "#FFD700",
-        "SATISFECHO": "#38A169",
-        "MUY SATISFECHO": "#00B894",
-        1: "#E53E3E", 2: "#FF8C00", 3: "#FFD700", 4: "#38A169", 5: "#00B894"
-    }
-    
-    # Asignar colores
-    count_df['color'] = count_df['Respuesta'].map(colors)
-    count_df['color'] = count_df['color'].fillna("#718096")  # Gris para valores sin mapear
-    
-    # Calcular porcentajes
-    total = count_df['Conteo'].sum()
-    count_df['Porcentaje'] = (count_df['Conteo'] / total * 100).round(1)
-    
-    # Crear el gráfico horizontal
-    fig = go.Figure()
-    
-    fig.add_trace(go.Bar(
-        x=count_df['Conteo'],
-        y=count_df['Respuesta'],
-        orientation='h',
-        marker=dict(
-            color=count_df['color'],
-            line=dict(color='white', width=1)
-        ),
-        text=[f'{conteo} ({porcentaje}%)' 
-              for conteo, porcentaje in zip(count_df['Conteo'], count_df['Porcentaje'])],
-        textposition='outside',
-        textfont=dict(size=12, color='#333333'),
-        hovertemplate=(
-            "<b>%{y}</b><br>" +
-            "Cantidad: %{x}<br>" +
-            "Porcentaje: %{customdata}%<br>" +
-            "<extra></extra>"
-        ),
-        customdata=count_df['Porcentaje'],
-        showlegend=False
-    ))
-    
-    # Layout profesional
-    fig.update_layout(
-        title=dict(
-            text=question_text,
-            font=dict(size=18, color='#333333'),
-            x=0.5,
-            y=0.95
-        ),
-        xaxis=dict(
-            title=dict(
-                text="Cantidad de Respuestas",
-                font=dict(size=14, color='#333333')
-            ),
-            showgrid=True,
-            gridcolor='rgba(128, 128, 128, 0.2)',
-            showline=True,
-            linecolor='#E2E8F0',
-            zeroline=True,
-            zerolinecolor='#E2E8F0'
-        ),
-        yaxis=dict(
-            showgrid=False,
-            showline=True,
-            linecolor='#E2E8F0'
+            title='Número de respuestas',
+            titlefont=dict(size=FONT_CONFIG['subtitle_size'], color=COLORS['text']),
+            tickfont=dict(size=FONT_CONFIG['tick_size'], color=COLORS['text']),
+            gridcolor='rgba(0,0,0,0.1)',
+            linecolor='rgba(0,0,0,0.2)'
         ),
         plot_bgcolor='white',
         paper_bgcolor='white',
-        height=max(300, 60 + (len(count_df) * 50)),
-        margin=dict(l=150, r=100, t=80, b=60),
-        hovermode='y unified',
-        hoverlabel=dict(
-            bgcolor="rgba(0, 0, 0, 0.8)",
-            bordercolor="white",
-            font=dict(size=12, color="white")
-        )
+        margin=dict(l=50, r=50, t=80, b=50),
+        height=400,
+        hovermode='x unified',
+        font=dict(family=FONT_CONFIG['family'])
     )
     
     return fig
-    """
-    Crea un gráfico de barras horizontales con máximo impacto visual
-    """
-    label_col = question_col + '_label'
 
-    # Determinar qué columna usar
-    if label_col in df.columns and df[label_col].notna().any():
-        col_to_use = label_col
-    elif question_col in df.columns:
-        col_to_use = question_col
-    else:
-        # Crear figura vacía con diseño impactante
-        fig = go.Figure()
-        fig.add_annotation(
-            text="⚠️ DATOS NO DISPONIBLES",
-            xref="paper", yref="paper",
-            x=0.5, y=0.5, xanchor='center', yanchor='middle',
-            showarrow=False, 
-            font=dict(size=24, color="#E74C3C", family="Montserrat", weight="bold"),
-            bgcolor="rgba(231, 76, 60, 0.1)",
-            bordercolor="#E74C3C",
-            borderwidth=2,
-            borderpad=20
-        )
-        fig.update_layout(
-            title=dict(
-                text=f"🚫 {question_text}",
-                font=dict(size=20, color='#2C3E50', family="Montserrat", weight="bold"),
-                x=0.5
-            ),
-            height=400,
-            plot_bgcolor='#F8F9FA',
-            paper_bgcolor='white'
-        )
-        return fig
-
-    # Contar frecuencias de las respuestas
-    count_df = df[col_to_use].dropna().value_counts().reset_index()
-    count_df.columns = ['Respuesta', 'Conteo']
-
-    if count_df.empty:
-        # Figura vacía con diseño impactante
-        fig = go.Figure()
-        fig.add_annotation(
-            text="📊 SIN DATOS VÁLIDOS",
-            xref="paper", yref="paper",
-            x=0.5, y=0.5, xanchor='center', yanchor='middle',
-            showarrow=False,
-            font=dict(size=22, color="#F39C12", family="Montserrat", weight="bold"),
-            bgcolor="rgba(243, 156, 18, 0.1)",
-            bordercolor="#F39C12",
-            borderwidth=2,
-            borderpad=15
-        )
-        fig.update_layout(
-            title=dict(
-                text=f"📈 {question_text}",
-                font=dict(size=20, color='#2C3E50', family="Montserrat", weight="bold"),
-                x=0.5
-            ),
-            height=400,
-            plot_bgcolor='#F8F9FA',
-            paper_bgcolor='white'
-        )
-        return fig
-
-    # Mapear respuestas para ordenamiento
-    satisfaction_order = {
-        "MUY INSATISFECHO/A": 1,
-        "INSATISFECHO/A": 2, 
-        "NI SATISFECHO/A NI INSATISFECHO/A": 3,
-        "SATISFECHO/A": 4,
-        "MUY SATISFECHO/A": 5,
-        "MUY INSATISFECHO": 1,
-        "INSATISFECHO": 2,
-        "NEUTRAL": 3,
-        "SATISFECHO": 4,
-        "MUY SATISFECHO": 5,
-        1: 1, 2: 2, 3: 3, 4: 4, 5: 5
-    }
-    
-    # Ordenar datos (de menor a mayor para barras horizontales)
-    count_df['orden'] = count_df['Respuesta'].map(satisfaction_order)
-    count_df = count_df.sort_values('orden', na_position='first')  # Menor arriba
-    
-    # Paleta de colores vibrante y de alto impacto
-    impact_colors = {
-        "MUY INSATISFECHO/A": "#FF1744",     # Rojo intenso
-        "INSATISFECHO/A": "#FF5722",         # Naranja fuerte
-        "NI SATISFECHO/A NI INSATISFECHO/A": "#FFB300", # Amarillo dorado
-        "SATISFECHO/A": "#4CAF50",           # Verde vibrante
-        "MUY SATISFECHO/A": "#00E676",       # Verde neón
-        "MUY INSATISFECHO": "#FF1744",
-        "INSATISFECHO": "#FF5722", 
-        "NEUTRAL": "#FFB300",
-        "SATISFECHO": "#4CAF50",
-        "MUY SATISFECHO": "#00E676",
-        1: "#FF1744", 2: "#FF5722", 3: "#FFB300", 4: "#4CAF50", 5: "#00E676"
-    }
-    
-    # Asignar colores
-    count_df['color'] = count_df['Respuesta'].map(impact_colors)
-    count_df['color'] = count_df['color'].fillna("#9E9E9E")
-    
-    # Calcular porcentajes
-    total = count_df['Conteo'].sum()
-    count_df['Porcentaje'] = (count_df['Conteo'] / total * 100).round(1)
-    
-    # Emojis de alto impacto
-    emoji_map = {
-        "MUY INSATISFECHO/A": "😠",
-        "INSATISFECHO/A": "😞",
-        "NI SATISFECHO/A NI INSATISFECHO/A": "😐",
-        "SATISFECHO/A": "😊",
-        "MUY SATISFECHO/A": "🤩",
-        "MUY INSATISFECHO": "😠",
-        "INSATISFECHO": "😞",
-        "NEUTRAL": "😐",
-        "SATISFECHO": "😊",
-        "MUY SATISFECHO": "🤩",
-        1: "😠", 2: "😞", 3: "😐", 4: "😊", 5: "🤩"
-    }
-    count_df['emoji'] = count_df['Respuesta'].map(emoji_map).fillna("📊")
-    
-    # Crear etiquetas con emojis grandes y texto impactante
-    count_df['etiqueta_completa'] = count_df['emoji'] + "  " + count_df['Respuesta'].astype(str)
-    
-    # Crear el gráfico horizontal de alto impacto
+def create_donut_chart(labels, values, percentages, colors, title):
+    """Crea gráfico de dona con diseño mejorado"""
     fig = go.Figure()
     
-    # Añadir barras con efectos visuales extremos
-    fig.add_trace(go.Bar(
-        x=count_df['Conteo'],
-        y=count_df['etiqueta_completa'],
-        orientation='h',
+    fig.add_trace(go.Pie(
+        labels=labels,
+        values=values,
+        hole=0.4,
         marker=dict(
-            color=count_df['color'],
-            line=dict(color='white', width=3),
-            opacity=0.95,
-            # Añadir gradiente y efectos 3D
-            pattern=dict(
-                shape="",
-                bgcolor=count_df['color'],
-                fgcolor=count_df['color']
-            )
+            colors=colors,
+            line=dict(color='white', width=2)
         ),
-        text=[f'<b>{conteo}</b><br><span style="font-size:14px">({porcentaje}%)</span>' 
-              for conteo, porcentaje in zip(count_df['Conteo'], count_df['Porcentaje'])],
+        textinfo='label+percent',
         textposition='outside',
-        textfont=dict(
-            size=16, 
-            color='#2C3E50',
-            family="Montserrat",
-            weight="bold"
-        ),
-        hovertemplate=(
-            "<b style='font-size:16px'>%{y}</b><br>" +
-            "<span style='font-size:14px'>Cantidad: <b>%{x}</b></span><br>" +
-            "<span style='font-size:14px'>Porcentaje: <b>%{customdata}%</b></span><br>" +
-            "<extra></extra>"
-        ),
-        customdata=count_df['Porcentaje'],
-        showlegend=False
+        textfont=dict(size=FONT_CONFIG['tick_size'], color=COLORS['text']),
+        hovertemplate='<b>%{label}</b><br>Respuestas: %{value}<br>Porcentaje: %{percent}<extra></extra>',
+        pull=[0.05 if i == 0 else 0 for i in range(len(labels))]  # Destacar primer segmento
     ))
     
-    # Añadir líneas de fondo para mayor impacto visual
-    max_value = count_df['Conteo'].max()
-    for i in range(len(count_df)):
-        fig.add_shape(
-            type="rect",
-            x0=0, y0=i-0.4, x1=max_value*1.1, y1=i+0.4,
-            fillcolor="rgba(0,0,0,0.03)" if i % 2 == 0 else "rgba(0,0,0,0.01)",
-            layer="below",
-            line=dict(width=0)
-        )
-    
-    # Layout de máximo impacto visual
-    fig.update_layout(
-        title=dict(
-            text=f"📊 <b>{question_text}</b>",
-            font=dict(size=24, color='#2C3E50', family="Montserrat", weight="bold"),
-            x=0.5,
-            y=0.95
-        ),
-        xaxis=dict(
-            title=dict(
-                text="<b>CANTIDAD DE RESPUESTAS</b>",
-                font=dict(size=16, color='#34495E', family="Montserrat", weight="bold"),
-                standoff=20
-            ),
-            tickfont=dict(size=14, color='#2C3E50', family="Montserrat", weight="bold"),
-            showgrid=True,
-            gridcolor='rgba(52, 73, 94, 0.15)',
-            gridwidth=2,
-            griddash='dot',
-            showline=True,
-            linecolor='#2C3E50',
-            linewidth=4,
-            mirror='ticks',
-            zeroline=True,
-            zerolinecolor='#E74C3C',
-            zerolinewidth=4,
-            tickmode='linear',
-            tick0=0,
-            dtick=max(1, max_value//8) if max_value > 8 else 1,
-            ticklen=8,
-            tickwidth=3,
-            tickcolor='#2C3E50',
-            ticks='outside',
-            separatethousands=True,
-            showspikes=True,
-            spikecolor='#E74C3C',
-            spikethickness=2,
-            spikemode='across'
-        ),
-        yaxis=dict(
-            title="",
-            tickfont=dict(size=15, color='#2C3E50', family="Montserrat", weight="bold"),
-            showgrid=False,
-            showline=True,
-            linecolor='#2C3E50',
-            linewidth=4,
-            mirror='ticks',
-            ticklen=12,
-            tickwidth=4,
-            tickcolor='#2C3E50',
-            ticks='outside',
-            tickmode='array',
-            tickvals=list(range(len(count_df))),
-            ticktext=count_df['etiqueta_completa'].tolist(),
-            ticklabelstandoff=10,
-            automargin=True,
-            categoryorder='array',
-            categoryarray=count_df['etiqueta_completa'].tolist()
-        ),
-        plot_bgcolor='#FAFBFC',
-        paper_bgcolor='white',
-        height=120 + (len(count_df) * 70),  # Altura dinámica generosa
-        margin=dict(l=250, r=120, t=100, b=80),
-        hovermode='y unified',
-        hoverlabel=dict(
-            bgcolor="rgba(44, 62, 80, 0.9)",
-            bordercolor="white",
-            borderwidth=2,
-            font=dict(size=14, color="white", family="Montserrat")
-        ),
-        dragmode='pan',
-        showlegend=False,
-        # Añadir decoraciones visuales
-        annotations=[
-            # Información total en estilo llamativo
-            dict(
-                text=f"<b style='font-size:18px; color:#E74C3C'>📊 TOTAL:</b><br>" +
-                     f"<b style='font-size:22px; color:#2C3E50'>{total}</b><br>" +
-                     f"<span style='font-size:14px; color:#7F8C8D'>respuestas válidas</span>",
-                xref="paper", yref="paper",
-                x=0.98, y=0.98,
-                xanchor='right', yanchor='top',
-                showarrow=False,
-                font=dict(family="Montserrat"),
-                bgcolor="rgba(255, 255, 255, 0.95)",
-                bordercolor="#E74C3C",
-                borderwidth=3,
-                borderpad=15,
-                # Añadir sombra visual
-                layer="above"
-            ),
-            # Indicador de mejor/peor con más detalle
-            dict(
-                text=f"🏆 <b>MÁS FRECUENTE:</b> {count_df.iloc[-1]['emoji']} " +
-                     f"{count_df.iloc[-1]['Respuesta']} ({count_df.iloc[-1]['Conteo']})<br>" +
-                     f"⚠️ <b>MENOS FRECUENTE:</b> {count_df.iloc[0]['emoji']} " +
-                     f"{count_df.iloc[0]['Respuesta']} ({count_df.iloc[0]['Conteo']})",
-                xref="paper", yref="paper", 
-                x=0.02, y=0.02,
-                xanchor='left', yanchor='bottom',
-                showarrow=False,
-                font=dict(size=12, family="Montserrat", weight="bold"),
-                bgcolor="rgba(236, 240, 241, 0.95)",
-                bordercolor="#34495E",
-                borderwidth=2,
-                borderpad=10
-            ),
-            # Marca de agua con el título del aspecto
-            dict(
-                text=f"<i>{question_text.upper()}</i>",
-                xref="paper", yref="paper",
-                x=0.5, y=0.5,
-                xanchor='center', yanchor='middle',
-                showarrow=False,
-                font=dict(size=32, color="rgba(44, 62, 80, 0.08)", family="Montserrat", weight="bold"),
-                layer="below"
-            )
-        ],
-        # Efectos de sombra y profundidad mejorados
-        shapes=[
-            # Marco decorativo superior
-            dict(
-                type="rect",
-                x0=-max_value*0.02, y0=len(count_df)-0.3, 
-                x1=max_value*1.08, y1=len(count_df)+0.3,
-                fillcolor="rgba(231, 76, 60, 0.1)",
-                line=dict(color="#E74C3C", width=3),
-                layer="below"
-            ),
-            # Marco decorativo inferior  
-            dict(
-                type="rect",
-                x0=-max_value*0.02, y0=-0.7, 
-                x1=max_value*1.08, y1=0.3,
-                fillcolor="rgba(39, 174, 96, 0.1)",
-                line=dict(color="#27AE60", width=3),
-                layer="below"
-            ),
-            # Línea vertical de énfasis en el centro
-            dict(
-                type="line",
-                x0=max_value/2, y0=-0.5, 
-                x1=max_value/2, y1=len(count_df)-0.5,
-                line=dict(color="rgba(142, 68, 173, 0.3)", width=2, dash="longdash"),
-                layer="below"
-            )
-        ]
+    # Añadir texto central
+    avg_score = sum(i * v for i, v in enumerate(values, 1)) / sum(values) if sum(values) > 0 else 0
+    fig.add_annotation(
+        text=f'<b>{avg_score:.1f}</b><br><span style="font-size:12px">Promedio</span>',
+        x=0.5, y=0.5,
+        font=dict(size=16, color=COLORS['text']),
+        showarrow=False
     )
     
-    # Añadir línea de referencia promedio con estilo
-    if len(count_df) >= 2:
-        promedio = count_df['Conteo'].mean()
-        fig.add_vline(
-            x=promedio,
-            line_dash="dash",
-            line_color="#8E44AD",
-            line_width=4,
-            opacity=0.8,
-            annotation_text=f"📊 PROMEDIO: {promedio:.1f}",
-            annotation_position="top",
-            annotation_font=dict(size=14, color="#8E44AD", family="Montserrat", weight="bold"),
-            annotation_bgcolor="rgba(142, 68, 173, 0.1)",
-            annotation_bordercolor="#8E44AD",
-            annotation_borderwidth=2
-        )
+    fig.update_layout(
+        title=dict(
+            text=f'<b>{title}</b>',
+            x=0.5,
+            y=0.95,
+            xanchor='center',
+            font=dict(size=FONT_CONFIG['title_size'], color=COLORS['text'])
+        ),
+        showlegend=True,
+        legend=dict(
+            orientation='v',
+            x=1.02,
+            y=0.5,
+            font=dict(size=FONT_CONFIG['legend_size'], color=COLORS['text'])
+        ),
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        margin=dict(l=50, r=150, t=80, b=50),
+        height=400,
+        font=dict(family=FONT_CONFIG['family'])
+    )
     
     return fig
+
+def create_comparison_chart(df, columns_map):
+    """Crea gráfico comparativo de todos los aspectos"""
+    averages = []
+    aspects = []
+    
+    for col_key, description in columns_map.items():
+        if col_key in df.columns:
+            numeric_data = pd.to_numeric(df[col_key], errors='coerce')
+            if numeric_data.notna().any():
+                avg = numeric_data.mean()
+                averages.append(avg)
+                aspects.append(description)
+    
+    if not averages:
+        return None
+    
+    # Crear gráfico de barras horizontales
+    fig = go.Figure()
+    
+    # Colores según el nivel de satisfacción
+    bar_colors = [COLORS['satisfaction_scale'][min(4, max(0, int(avg)-1))] for avg in averages]
+    
+    fig.add_trace(go.Bar(
+        y=aspects,
+        x=averages,
+        orientation='h',
+        text=[f'{avg:.2f}' for avg in averages],
+        textposition='inside',
+        textfont=dict(size=FONT_CONFIG['subtitle_size'], color='white'),
+        marker=dict(
+            color=bar_colors,
+            line=dict(color='white', width=1)
+        ),
+        hovertemplate='<b>%{y}</b><br>Promedio: %{x:.2f}/5<extra></extra>'
+    ))
+    
+    fig.update_layout(
+        title=dict(
+            text='<b>Comparación de Satisfacción por Aspecto</b>',
+            x=0.5,
+            y=0.95,
+            xanchor='center',
+            font=dict(size=FONT_CONFIG['title_size'], color=COLORS['text'])
+        ),
+        xaxis=dict(
+            title='Puntaje Promedio',
+            range=[0, 5],
+            tickfont=dict(size=FONT_CONFIG['tick_size'], color=COLORS['text']),
+            titlefont=dict(size=FONT_CONFIG['subtitle_size'], color=COLORS['text']),
+            gridcolor='rgba(0,0,0,0.1)'
+        ),
+        yaxis=dict(
+            tickfont=dict(size=FONT_CONFIG['tick_size'], color=COLORS['text']),
+            categoryorder='total ascending'
+        ),
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        margin=dict(l=200, r=50, t=80, b=50),
+        height=300,
+        font=dict(family=FONT_CONFIG['family'])
+    )
+    
+    return fig
+
+def display_enhanced_abarrotes_charts(filtered_df_pagina, abarrotes_cols_map):
+    """
+    Función principal para mostrar gráficos mejorados de abarrotes
+    """
+    st.header("📊 Satisfacción con los Abarrotes")
+    
+    # Verificar datos válidos
+    valid_display_cols = []
+    for col_key in abarrotes_cols_map.keys():
+        label_col = col_key + '_label'
+        if label_col in filtered_df_pagina.columns and filtered_df_pagina[label_col].notna().any():
+            valid_display_cols.append(col_key)
+        elif col_key in filtered_df_pagina.columns and pd.api.types.is_numeric_dtype(filtered_df_pagina[col_key].dtype) and filtered_df_pagina[col_key].notna().any():
+            valid_display_cols.append(col_key)
+    
+    if not valid_display_cols:
+        st.warning("⚠️ No se encontraron datos de satisfacción válidos para Abarrotes.")
+        return
+    
+    # Gráfico comparativo general
+    comp_fig = create_comparison_chart(filtered_df_pagina, abarrotes_cols_map)
+    if comp_fig:
+        st.plotly_chart(comp_fig, use_container_width=True)
+        st.markdown("---")
+    
+    # Gráficos individuales con alternancia de estilos
+    st.subheader("📈 Análisis Detallado por Aspecto")
+    
+    cols = st.columns(2)
+    for idx, col_key in enumerate(valid_display_cols):
+        col_description = abarrotes_cols_map[col_key]
+        chart_type = 'donut' if idx % 2 == 0 else 'bar'  # Alternar estilos
+        
+        with cols[idx % 2]:
+            try:
+                fig = create_enhanced_satisfaction_chart(
+                    filtered_df_pagina, col_key, col_description, chart_type
+                )
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info(f"ℹ️ Sin datos suficientes para '{col_description}'")
+            except Exception as e:
+                st.error(f"❌ Error en gráfico '{col_description}': {e}")
+
+def inject_custom_css():
+    """Inyecta CSS personalizado para mejorar la apariencia"""
+    st.markdown("""
+    <style>
+    /* Mejorar tipografía general */
+    .main .block-container {
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    
+    /* Estilo para headers */
+    .main h1, .main h2, .main h3 {
+        color: #2C3E50;
+        font-weight: 600;
+    }
+    
+    /* Mejorar spacing entre gráficos */
+    .element-container {
+        margin-bottom: 1rem;
+    }
+    
+    /* Estilo para métricas */
+    [data-testid="metric-container"] {
+        background-color: #FAFAFA;
+        border: 1px solid #ECF0F1;
+        padding: 1rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    /* Mejorar apariencia de warnings y info */
+    .stAlert {
+        border-radius: 8px;
+        border-left: 4px solid;
+    }
+    
+    /* Personalizar sidebar */
+    .css-1d391kg {
+        background-color: #F8F9FA;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 # Configuración de la página
 st.set_page_config(
@@ -687,8 +340,11 @@ st.set_page_config(
     layout="wide"
 )
 
+# Inyectar CSS personalizado
+inject_custom_css()
+
 # Título y descripción
-st.title("Análisis de Satisfacción - Abarrotes")
+st.title("📦 Análisis de Satisfacción - Abarrotes")
 st.markdown("""
 Esta sección presenta el análisis detallado de la satisfacción con los abarrotes entregados,
 incluyendo fechas de vencimiento, tipo de empaque y correspondencia con la lista de mercado.
@@ -704,15 +360,12 @@ def get_data():
 df_pagina = get_data()
 
 if df_pagina is None or df_pagina.empty:
-    st.error("1_Abarrotes.py: No se pudieron cargar los datos iniciales desde load_data().")
+    st.error("❌ No se pudieron cargar los datos iniciales desde load_data().")
     st.stop()
-# else: # No es necesario mostrar mensaje de éxito aquí de nuevo
-    # st.success(f"Datos cargados para Abarrotes. Registros iniciales: {len(df_pagina)}")
-
 
 # --- Sidebar para Filtros (similar a Home.py) ---
 # Conservamos la sidebar pero no la usaremos para filtrar los datos
-st.sidebar.title("Filtros (Desactivados)")
+st.sidebar.title("🔧 Filtros (Desactivados)")
 date_range_selected = None
 selected_comuna = "Todas"
 selected_barrio = "Todos"
@@ -731,113 +384,72 @@ if 'fecha' in df_pagina.columns and pd.api.types.is_datetime64_any_dtype(df_pagi
                 default_end_date = max_date_dt.date()
                 # Usar una KEY única para este filtro si se repite en otras páginas
                 date_range_selected = st.sidebar.date_input(
-                    "Rango de fechas (Desactivado)",
+                    "📅 Rango de fechas (Desactivado)",
                     value=[default_start_date, default_end_date],
                     min_value=default_start_date,
                     max_value=default_end_date,
                     key='date_filter_abarrotes' # Key específica para esta página
                 )
             else:
-                 st.sidebar.warning("Rango de fechas inválido.")
+                 st.sidebar.warning("⚠️ Rango de fechas inválido.")
         except Exception as e_date_filter_ui:
-            st.sidebar.error(f"Error en filtro de fecha: {e_date_filter_ui}")
+            st.sidebar.error(f"❌ Error en filtro de fecha: {e_date_filter_ui}")
 
 # Filtro por ubicación
 if 'comuna' in df_pagina.columns:
     all_comunas = ["Todas"] + sorted([str(x) for x in df_pagina['comuna'].dropna().unique()])
-    selected_comuna = st.sidebar.selectbox("Comuna (Desactivado)", all_comunas, index=0, key='comuna_filter_abarrotes')
-# else: st.sidebar.info("Columna 'comuna' no disponible.") # Evitar repetir mensajes
+    selected_comuna = st.sidebar.selectbox("🏘️ Comuna (Desactivado)", all_comunas, index=0, key='comuna_filter_abarrotes')
 
 if 'barrio' in df_pagina.columns:
     all_barrios = ["Todos"] + sorted([str(x) for x in df_pagina['barrio'].dropna().unique()])
-    selected_barrio = st.sidebar.selectbox("Barrio (Desactivado)", all_barrios, index=0, key='barrio_filter_abarrotes')
-# else: st.sidebar.info("Columna 'barrio' no disponible.")
+    selected_barrio = st.sidebar.selectbox("🏠 Barrio (Desactivado)", all_barrios, index=0, key='barrio_filter_abarrotes')
 
 if 'nodo' in df_pagina.columns:
     all_nodos = ["Todos"] + sorted([str(x) for x in df_pagina['nodo'].dropna().unique()])
-    selected_nodo = st.sidebar.selectbox("Nodo (Desactivado)", all_nodos, index=0, key='nodo_filter_abarrotes')
-# else: st.sidebar.info("Columna 'nodo' no disponible.")
+    selected_nodo = st.sidebar.selectbox("📍 Nodo (Desactivado)", all_nodos, index=0, key='nodo_filter_abarrotes')
 
 # Información sobre filtros desactivados
-st.sidebar.info("Los filtros están desactivados temporalmente para mostrar todos los datos disponibles.")
+st.sidebar.info("ℹ️ Los filtros están desactivados temporalmente para mostrar todos los datos disponibles.")
 
 # --- NO APLICAR FILTROS - Usar el DataFrame completo ---
 # En lugar de filtrar, simplemente usamos el DataFrame completo
 filtered_df_pagina = df_pagina.copy()  # Usar todos los datos sin filtrar
 
 # Mostrar métrica de encuestas para esta página
-st.sidebar.metric("Total de Encuestas (Abarrotes)", len(filtered_df_pagina))
+st.sidebar.metric("📊 Total de Encuestas (Abarrotes)", len(filtered_df_pagina))
 
-
-# --- Contenido de la Página (si hay datos) ---
+# --- Contenido de la Página (VERSIÓN MEJORADA) ---
 if filtered_df_pagina.empty:
-    st.warning("No se encontraron registros para el análisis de Abarrotes.")
+    st.warning("⚠️ No se encontraron registros para el análisis de Abarrotes.")
     print(f"WARN 1_Abarrotes.py: filtered_df_pagina está vacío.")
 else:
     print(f"INFO 1_Abarrotes.py: Mostrando contenido con {len(filtered_df_pagina)} filas totales.")
-    # --- Análisis de Abarrotes ---
-
-    # Mapeo de las columnas de abarrotes (usar COL_DESCRIPTIONS si es posible)
+    
+    # --- Análisis de Abarrotes con Gráficos Mejorados ---
+    
+    # Mapeo de las columnas de abarrotes
     abarrotes_cols_map = {
         '9fecha_vencimiento': COL_DESCRIPTIONS.get('9fecha_vencimiento', 'Fecha de vencimiento'),
         '10tipo_empaque': COL_DESCRIPTIONS.get('10tipo_empaque', 'Tipo de empaque'),
         '11productos_iguales_lista_mercado': COL_DESCRIPTIONS.get('11productos_iguales_lista_mercado', 'Correspondencia con lista')
     }
+    
+    # Mostrar gráficos mejorados
+    display_enhanced_abarrotes_charts(filtered_df_pagina, abarrotes_cols_map)
 
-    # Análisis de satisfacción por pregunta
-    st.header("Satisfacción con los Abarrotes")
-
-    # Comprobar si existen las columnas de abarrotes y tienen datos válidos (numéricos o etiquetas)
-    # Usar .notna() porque la columna _label puede existir pero estar llena de NaNs si la conversión falló
-    valid_display_cols = []
-    for col_key in abarrotes_cols_map.keys():
-        label_col = col_key + '_label'
-        # Priorizar _label, si no existe o está vacía, verificar la columna numérica original
-        if label_col in filtered_df_pagina.columns and filtered_df_pagina[label_col].notna().any():
-            valid_display_cols.append(col_key)
-        elif col_key in filtered_df_pagina.columns and pd.api.types.is_numeric_dtype(filtered_df_pagina[col_key].dtype) and filtered_df_pagina[col_key].notna().any():
-            valid_display_cols.append(col_key)
-            print(f"WARN 1_Abarrotes.py: Usando columna numérica '{col_key}' directamente porque '{label_col}' falta o está vacía.")
-
-
-    if not valid_display_cols:
-        st.warning("No se encontraron datos de satisfacción válidos para Abarrotes.")
-    else:
-        # Mostrar gráficos uno por uno para máximo impacto
-        for col_key in valid_display_cols:
-            col_description = abarrotes_cols_map[col_key]
-            # Seleccionar la columna correcta (priorizar _label)
-            plot_col = col_key + '_label' if col_key + '_label' in filtered_df_pagina.columns and filtered_df_pagina[col_key + '_label'].notna().any() else col_key
-
-            print(f"DEBUG 1_Abarrotes.py: Intentando graficar '{plot_col}' para '{col_description}'")
-            try:
-                fig = plot_question_satisfaction(filtered_df_pagina, col_key, col_description) # Pasar col_key, la función usará _label
-                if fig:
-                    st.plotly_chart(fig, use_container_width=True)
-                    # Añadir separador visual entre gráficos
-                    st.markdown("---")
-                else:
-                    # La función plot_question_satisfaction ya imprime si no hay datos
-                    st.info(f"No hay datos suficientes o válidos para graficar '{col_description}'.")
-            except Exception as e_plot:
-                 st.error(f"Error al graficar '{col_description}': {e_plot}")
-                 print(f"ERROR 1_Abarrotes.py - plot_question_satisfaction para '{col_key}': {e_plot}")
-
-
-    # --- Análisis de Comedores con Insatisfacción ---
-    st.header("Comedores con Niveles de Insatisfacción Reportados")
+    # --- Análisis de Comedores con Insatisfacción (MEJORADO) ---
+    st.markdown("---")
+    st.header("🚨 Comedores con Niveles de Insatisfacción Reportados")
 
     # Verificar columnas necesarias: identificación de comedor y columnas de satisfacción numéricas
-    # Intentar encontrar una columna de identificación del comedor
-    id_comedor_candidates = ['nombre_comedor', 'comedor', 'id_comedor', 'nombre del comedor'] # Añade otros posibles nombres
+    id_comedor_candidates = ['nombre_comedor', 'comedor', 'id_comedor', 'nombre del comedor']
     id_comedor_col = next((col for col in id_comedor_candidates if col in filtered_df_pagina.columns), None)
-
     satisfaction_numeric_cols = [col for col in abarrotes_cols_map.keys() if col in filtered_df_pagina.columns and pd.api.types.is_numeric_dtype(filtered_df_pagina[col])]
 
     if not satisfaction_numeric_cols:
-        st.info("No hay columnas numéricas de satisfacción de abarrotes para analizar insatisfacción.")
+        st.info("ℹ️ No hay columnas numéricas de satisfacción de abarrotes para analizar insatisfacción.")
     elif not id_comedor_col:
-        st.warning("No se encontró una columna para identificar el comedor (ej. 'nombre_comedor', 'comedor'). No se puede agrupar.")
+        st.warning("⚠️ No se encontró una columna para identificar el comedor (ej. 'nombre_comedor', 'comedor'). No se puede agrupar.")
     else:
         print(f"DEBUG 1_Abarrotes.py: Analizando insatisfacción. ID Comedor: '{id_comedor_col}', Columnas numéricas: {satisfaction_numeric_cols}")
         try:
@@ -850,7 +462,7 @@ else:
             insatisfaccion_mask = (analisis_df[satisfaction_numeric_cols] <= 2).any(axis=1)
 
             if not insatisfaccion_mask.any():
-                st.success("No se encontraron reportes de insatisfacción (puntaje <= 2) para Abarrotes con los datos actuales.")
+                st.success("✅ No se encontraron reportes de insatisfacción (puntaje ≤ 2) para Abarrotes con los datos actuales.")
             else:
                 insatisfechos_df = analisis_df[insatisfaccion_mask]
                 print(f"DEBUG 1_Abarrotes.py: {len(insatisfechos_df)} filas con al menos una insatisfacción encontrada.")
@@ -859,58 +471,139 @@ else:
                 conteo_comedores = insatisfechos_df[id_comedor_col].value_counts().reset_index()
                 conteo_comedores.columns = ['Comedor', 'Número de Reportes con Insatisfacción']
 
-                # Opcional: Detallar qué aspectos fueron insatisfactorios por comedor (más complejo)
-                # Por ahora, mostrar la tabla de conteo
-                st.write("Comedores con al menos un reporte de insatisfacción (puntaje <= 2) en Abarrotes:")
-                st.dataframe(conteo_comedores.sort_values('Número de Reportes con Insatisfacción', ascending=False), hide_index=True, use_container_width=True)
-
-                # Podrías añadir aquí conclusiones textuales como las tenías antes
-                # ...
+                # Crear visualización mejorada para comedores insatisfechos
+                if len(conteo_comedores) > 0:
+                    fig_insat = go.Figure()
+                    
+                    fig_insat.add_trace(go.Bar(
+                        y=conteo_comedores['Comedor'].head(10),  # Top 10
+                        x=conteo_comedores['Número de Reportes con Insatisfacción'].head(10),
+                        orientation='h',
+                        marker=dict(
+                            color=COLORS['secondary'],
+                            opacity=0.8,
+                            line=dict(color='white', width=1)
+                        ),
+                        text=conteo_comedores['Número de Reportes con Insatisfacción'].head(10),
+                        textposition='inside',
+                        textfont=dict(color='white', size=12),
+                        hovertemplate='<b>%{y}</b><br>Reportes: %{x}<extra></extra>'
+                    ))
+                    
+                    fig_insat.update_layout(
+                        title=dict(
+                            text='<b>Top 10 Comedores con Más Reportes de Insatisfacción</b>',
+                            x=0.5,
+                            font=dict(size=FONT_CONFIG['title_size'], color=COLORS['text'])
+                        ),
+                        xaxis=dict(
+                            title='Número de Reportes',
+                            tickfont=dict(size=FONT_CONFIG['tick_size'], color=COLORS['text']),
+                            titlefont=dict(size=FONT_CONFIG['subtitle_size'], color=COLORS['text']),
+                            gridcolor='rgba(0,0,0,0.1)'
+                        ),
+                        yaxis=dict(
+                            categoryorder='total ascending',
+                            tickfont=dict(size=FONT_CONFIG['tick_size'], color=COLORS['text'])
+                        ),
+                        plot_bgcolor='white',
+                        paper_bgcolor='white',
+                        height=400,
+                        margin=dict(l=200, r=50, t=80, b=50),
+                        font=dict(family=FONT_CONFIG['family'])
+                    )
+                    
+                    st.plotly_chart(fig_insat, use_container_width=True)
+                
+                # Tabla con estilo mejorado
+                st.markdown("**📋 Detalle completo de comedores con insatisfacción:**")
+                st.dataframe(
+                    conteo_comedores.sort_values('Número de Reportes con Insatisfacción', ascending=False),
+                    hide_index=True,
+                    use_container_width=True
+                )
 
         except Exception as e_insat:
-            st.error(f"Error analizando comedores insatisfechos: {e_insat}")
+            st.error(f"❌ Error analizando comedores insatisfechos: {e_insat}")
             print(f"ERROR 1_Abarrotes.py - Análisis Insatisfacción: {e_insat}")
 
-
-    # --- Conclusiones y recomendaciones ---
-    st.header("Conclusiones y Recomendaciones (Abarrotes)")
+    # --- Conclusiones y recomendaciones (MEJORADO) ---
+    st.markdown("---")
+    st.header("📋 Conclusiones y Recomendaciones")
+    
     try:
         satisfaction_means = {}
         valid_cols_for_mean = [col for col in abarrotes_cols_map.keys() if col in filtered_df_pagina.columns and pd.api.types.is_numeric_dtype(filtered_df_pagina[col])]
 
         if valid_cols_for_mean:
-             for col in valid_cols_for_mean:
-                 numeric_data = pd.to_numeric(filtered_df_pagina[col], errors='coerce')
-                 if numeric_data.notna().any():
-                     satisfaction_means[col] = numeric_data.mean()
+            for col in valid_cols_for_mean:
+                numeric_data = pd.to_numeric(filtered_df_pagina[col], errors='coerce')
+                if numeric_data.notna().any():
+                    satisfaction_means[col] = numeric_data.mean()
 
         if satisfaction_means:
-             min_aspect_col = min(satisfaction_means, key=satisfaction_means.get)
-             min_score = satisfaction_means[min_aspect_col]
-             max_aspect_col = max(satisfaction_means, key=satisfaction_means.get)
-             max_score = satisfaction_means[max_aspect_col]
+            min_aspect_col = min(satisfaction_means, key=satisfaction_means.get)
+            min_score = satisfaction_means[min_aspect_col]
+            max_aspect_col = max(satisfaction_means, key=satisfaction_means.get)
+            max_score = satisfaction_means[max_aspect_col]
 
-             min_desc = abarrotes_cols_map.get(min_aspect_col, min_aspect_col)
-             max_desc = abarrotes_cols_map.get(max_aspect_col, max_aspect_col)
+            min_desc = abarrotes_cols_map.get(min_aspect_col, min_aspect_col)
+            max_desc = abarrotes_cols_map.get(max_aspect_col, max_aspect_col)
 
-             st.markdown(f"""
-             Basado en el análisis de los datos:
+            # Crear métricas visuales
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric(
+                    label="🏆 Mayor Satisfacción",
+                    value=f"{max_score:.2f}/5",
+                    delta=max_desc
+                )
+            
+            with col2:
+                st.metric(
+                    label="📉 Menor Satisfacción", 
+                    value=f"{min_score:.2f}/5",
+                    delta=min_desc,
+                    delta_color="inverse"
+                )
+            
+            with col3:
+                overall_avg = np.mean(list(satisfaction_means.values()))
+                st.metric(
+                    label="📊 Promedio General",
+                    value=f"{overall_avg:.2f}/5"
+                )
 
-             - El aspecto con **mayor satisfacción** es "{max_desc}" con un puntaje promedio de **{max_score:.2f}/5**.
-             - El aspecto con **menor satisfacción** es "{min_desc}" con un puntaje promedio de **{min_score:.2f}/5**.
-
-             **Recomendaciones:**
-             - Centrar esfuerzos de mejora en "{min_desc}".
-             - Mantener las buenas prácticas relacionadas con "{max_desc}".
-             - Realizar seguimiento continuo de la satisfacción para identificar tendencias.
-             """)
+            # Recomendaciones con mejor formato
+            st.markdown(f"""
+            ### 🎯 **Recomendaciones Estratégicas**
+            
+            **🔴 Área Prioritaria de Mejora:**
+            - **{min_desc}** requiere atención inmediata (puntaje: {min_score:.2f}/5)
+            - Implementar plan de acción específico para este aspecto
+            
+            **🟢 Fortaleza a Mantener:**
+            - **{max_desc}** muestra excelentes resultados (puntaje: {max_score:.2f}/5)
+            - Documentar buenas prácticas para replicar en otras áreas
+            
+            **📈 Acciones Sugeridas:**
+            - Realizar seguimiento quincenal de indicadores
+            - Capacitar equipos en aspectos con menor satisfacción
+            - Establecer metas de mejora progresiva
+            """)
         else:
-             st.info("No hay datos numéricos de satisfacción suficientes para generar conclusiones automáticas.")
+            st.info("ℹ️ No hay datos numéricos de satisfacción suficientes para generar conclusiones automáticas.")
+    
     except Exception as e_conclu:
-        st.error(f"Error generando conclusiones: {e_conclu}")
+        st.error(f"❌ Error generando conclusiones: {e_conclu}")
         print(f"ERROR 1_Abarrotes.py - Conclusiones: {e_conclu}")
 
-
-# --- Footer ---
+# --- Footer mejorado ---
 st.markdown("---")
-st.markdown("Dashboard de Análisis de la Encuesta de Satisfacción | Sección: Abarrotes")
+st.markdown("""
+<div style='text-align: center; color: #7F8C8D; font-size: 14px; padding: 20px;'>
+    📊 <strong>Dashboard de Análisis de Satisfacción</strong> | Sección: Abarrotes<br>
+    <em>Análisis generado automáticamente basado en datos de encuestas</em>
+</div>
+""", unsafe_allow_html=True)
