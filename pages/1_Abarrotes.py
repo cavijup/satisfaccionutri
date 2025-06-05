@@ -1,137 +1,48 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from utils.data_loader import load_data, get_filtered_data # Asegúrate que estas funciones existan en data_loader.py
 from utils.data_processing import ( # Asegúrate que estas funciones existan en data_processing.py
-    # plot_question_satisfaction,  # Comentamos la función original
+    plot_question_satisfaction,
     # create_wordcloud, # Descomenta si usas wordcloud aquí
     COL_DESCRIPTIONS
 )
 
-# Función modificada para barras horizontales y fondo blanco
-def plot_question_satisfaction(df, col_key, col_description):
+# Función modificada para convertir gráficos a barras horizontales
+def make_horizontal_chart(fig):
     """
-    Crea un gráfico de barras horizontales con fondo blanco y colores originales
+    Convierte cualquier gráfico de barras verticales a horizontales y aplica fondo blanco
     """
+    if fig is None:
+        return None
+    
     try:
-        # Determinar qué columna usar (priorizar _label)
-        label_col = col_key + '_label'
-        if label_col in df.columns and df[label_col].notna().any():
-            plot_col = label_col
-            data_type = 'categorical'
-        elif col_key in df.columns and pd.api.types.is_numeric_dtype(df[col_key]):
-            plot_col = col_key
-            data_type = 'numeric'
-        else:
-            print(f"WARN: No se encontraron datos válidos para {col_key}")
-            return None
-
-        # Filtrar datos válidos
-        valid_data = df[df[plot_col].notna()]
-        if valid_data.empty:
-            print(f"WARN: No hay datos válidos para {col_key}")
-            return None
-
-        # Contar valores
-        if data_type == 'categorical':
-            value_counts = valid_data[plot_col].value_counts().sort_index()
-        else:
-            value_counts = valid_data[plot_col].value_counts().sort_index()
-
-        if value_counts.empty:
-            print(f"WARN: No hay conteos válidos para {col_key}")
-            return None
-
-        # Convertir a DataFrame para Plotly
-        chart_df = pd.DataFrame({
-            'Respuesta': value_counts.index,
-            'Cantidad': value_counts.values
-        })
-
-        # Colores originales que tenías
-        original_colors = [
-            '#FF6B6B',  # Rojo coral
-            '#4ECDC4',  # Turquesa
-            '#45B7D1',  # Azul cielo
-            '#96CEB4',  # Verde menta
-            '#FFEAA7',  # Amarillo suave
-            '#DDA0DD',  # Plum
-            '#98D8C8',  # Menta claro
-            '#F7DC6F',  # Amarillo dorado
-            '#BB8FCE',  # Lavanda
-            '#85C1E9'   # Azul claro
-        ]
-
-        # Crear gráfico de barras horizontales usando plotly express
-        fig = px.bar(
-            chart_df, 
-            x='Cantidad', 
-            y='Respuesta',
-            orientation='h',
-            title=col_description,
-            text='Cantidad',
-            color='Respuesta',
-            color_discrete_sequence=original_colors
-        )
-
-        # Configurar layout con fondo blanco
+        # Intercambiar x e y para hacer horizontal
+        for trace in fig.data:
+            if hasattr(trace, 'x') and hasattr(trace, 'y'):
+                # Intercambiar valores
+                temp_x = trace.x
+                trace.x = trace.y
+                trace.y = temp_x
+                
+                # Cambiar orientación
+                if hasattr(trace, 'orientation'):
+                    trace.orientation = 'h'
+        
+        # Actualizar layout para fondo blanco y ajustar ejes
         fig.update_layout(
-            # Fondo blanco
             plot_bgcolor='white',
             paper_bgcolor='white',
-            
-            # Configuración de título
-            title=dict(
-                font=dict(size=16, color='rgba(50, 50, 50, 0.9)'),
-                x=0.5,
-                xanchor='center'
-            ),
-            
-            # Configuración de ejes
-            xaxis=dict(
-                title="Número de Respuestas",
-                showgrid=True,
-                gridcolor='rgba(200, 200, 200, 0.3)',
-                showline=True,
-                linecolor='rgba(100, 100, 100, 0.8)',
-                tickfont=dict(color='rgba(70, 70, 70, 0.9)')
-            ),
-            
-            yaxis=dict(
-                title="Categorías de Respuesta",
-                showline=True,
-                linecolor='rgba(100, 100, 100, 0.8)',
-                tickfont=dict(color='rgba(70, 70, 70, 0.9)'),
-                categoryorder='total ascending'  # Ordenar por valores
-            ),
-            
-            # Margenes
-            margin=dict(l=10, r=50, t=50, b=50),
-            
-            # Altura dinámica
-            height=max(300, len(chart_df) * 50 + 100),
-            
-            # Configuración de fuente
-            font=dict(family="Arial", size=10, color="rgba(70, 70, 70, 0.9)"),
-            
-            # Ocultar leyenda ya que los colores son por categoría
-            showlegend=False
+            xaxis_title="Número de Respuestas",
+            yaxis_title="Categorías de Respuesta",
+            yaxis={'categoryorder': 'total ascending'}  # Ordenar por valores
         )
-
-        # Configurar las barras
-        fig.update_traces(
-            textposition='outside',
-            textfont=dict(size=12, color='rgba(50, 50, 50, 0.9)'),
-            hovertemplate='<b>%{y}</b><br>Cantidad: %{x}<extra></extra>'
-        )
-
+        
         return fig
-
+        
     except Exception as e:
-        print(f"ERROR en plot_question_satisfaction para {col_key}: {e}")
-        return None
-
+        print(f"Error convirtiendo a horizontal: {e}")
+        return fig
 
 # Configuración de la página
 st.set_page_config(
@@ -269,9 +180,13 @@ else:
             with cols_layout[col_index % num_cols]:
                 print(f"DEBUG 1_Abarrotes.py: Intentando graficar '{plot_col}' para '{col_description}'")
                 try:
-                    fig = plot_question_satisfaction(filtered_df_pagina, col_key, col_description) # Pasar col_key, la función usará _label
+                    # Usar la función original del archivo data_processing
+                    fig = plot_question_satisfaction(filtered_df_pagina, col_key, col_description)
+                    
                     if fig:
-                        st.plotly_chart(fig, use_container_width=True)
+                        # Convertir a horizontal y aplicar fondo blanco
+                        fig_horizontal = make_horizontal_chart(fig)
+                        st.plotly_chart(fig_horizontal, use_container_width=True)
                     else:
                         # La función plot_question_satisfaction ya imprime si no hay datos
                         st.info(f"No hay datos suficientes o válidos para graficar '{col_description}'.")
