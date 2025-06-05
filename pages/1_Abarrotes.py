@@ -9,7 +9,101 @@ from utils.data_processing import ( # Asegúrate que estas funciones existan en 
     COL_DESCRIPTIONS
 )
 
-def plot_satisfaction_donut_professional(df, question_col, question_text):
+def plot_satisfaction_gauge_professional(df, question_col, question_text):
+    """
+    Crea un medidor/gauge profesional para satisfacción promedio
+    """
+    # Calcular satisfacción promedio
+    if question_col not in df.columns:
+        return None
+    
+    numeric_data = pd.to_numeric(df[question_col], errors='coerce')
+    if not numeric_data.notna().any():
+        return None
+    
+    satisfaccion_promedio = numeric_data.mean()
+    total_respuestas = numeric_data.count()
+    
+    # Determinar color según nivel
+    if satisfaccion_promedio >= 4.0:
+        color = "#27AE60"  # Verde
+        estado = "Excelente"
+    elif satisfaccion_promedio >= 3.5:
+        color = "#2ECC71"  # Verde claro
+        estado = "Bueno"
+    elif satisfaccion_promedio >= 2.5:
+        color = "#F39C12"  # Naranja
+        estado = "Regular"
+    elif satisfaccion_promedio >= 2.0:
+        color = "#E67E22"  # Naranja oscuro
+        estado = "Bajo"
+    else:
+        color = "#E74C3C"  # Rojo
+        estado = "Crítico"
+    
+    # Crear medidor
+    fig = go.Figure(go.Indicator(
+        mode = "gauge+number+delta",
+        value = satisfaccion_promedio,
+        domain = {'x': [0, 1], 'y': [0, 1]},
+        title = {
+            'text': question_text,
+            'font': {'size': 18, 'color': '#2C3E50', 'family': 'Inter'}
+        },
+        delta = {
+            'reference': 3.0,  # Punto neutral
+            'increasing': {'color': "#27AE60"},
+            'decreasing': {'color': "#E74C3C"}
+        },
+        gauge = {
+            'axis': {
+                'range': [None, 5],
+                'tickwidth': 1,
+                'tickcolor': "#34495E",
+                'tickfont': {'size': 12, 'family': 'Inter'}
+            },
+            'bar': {'color': color, 'thickness': 0.3},
+            'bgcolor': "white",
+            'borderwidth': 2,
+            'bordercolor': "#BDC3C7",
+            'steps': [
+                {'range': [0, 2], 'color': "#FADBD8"},     # Rojo claro
+                {'range': [2, 3], 'color': "#FCF3CF"},     # Amarillo claro
+                {'range': [3, 4], 'color': "#D5DBDB"},     # Gris claro
+                {'range': [4, 5], 'color': "#D4F1C4"}      # Verde claro
+            ],
+            'threshold': {
+                'line': {'color': "#2C3E50", 'width': 4},
+                'thickness': 0.75,
+                'value': 4.0
+            }
+        },
+        number = {
+            'font': {'size': 32, 'color': color, 'family': 'Inter'},
+            'suffix': "/5"
+        }
+    ))
+    
+    # Añadir anotaciones
+    fig.add_annotation(
+        text=f"<b>{estado}</b><br>{total_respuestas} respuestas",
+        x=0.5, y=0.15,
+        font=dict(size=16, color="#2C3E50", family="Inter"),
+        showarrow=False,
+        bgcolor="rgba(255,255,255,0.8)",
+        bordercolor="#BDC3C7",
+        borderwidth=1,
+        borderpad=10
+    )
+    
+    fig.update_layout(
+        height=350,
+        margin=dict(l=40, r=40, t=80, b=60),
+        paper_bgcolor='white',
+        plot_bgcolor='white'
+    )
+    
+    return fig
     """
     Crea un gráfico de dona profesional para satisfacción
     """
@@ -442,7 +536,7 @@ else:
                 print(f"DEBUG 1_Abarrotes.py: Intentando graficar '{plot_col}' para '{col_description}'")
                 try:
                     # Usar la nueva función profesional en lugar de la original
-                    fig = plot_satisfaction_donut_professional(filtered_df_pagina, col_key, col_description)
+                    fig = plot_satisfaction_gauge_professional(filtered_df_pagina, col_key, col_description)
                     if fig:
                         st.plotly_chart(fig, use_container_width=True)
                     else:
