@@ -50,8 +50,7 @@ def plot_question_satisfaction_improved(df, col_key, col_description):
             textfont=dict(
                 color='white', 
                 size=13, 
-                family='Inter, system-ui, -apple-system, sans-serif',
-                weight='600'
+                family='Inter, system-ui, -apple-system, sans-serif'
             ),
             hovertemplate='<b style="color:#2d3748;">%{y}</b><br>' +
                          '<span style="color:#667eea;">Respuestas:</span> <b>%{x}</b>' +
@@ -73,8 +72,7 @@ def plot_question_satisfaction_improved(df, col_key, col_description):
             font=dict(
                 size=18, 
                 color='#2d3748', 
-                family='Inter, system-ui, -apple-system, sans-serif',
-                weight='700'
+                family='Inter, system-ui, -apple-system, sans-serif'
             )
         ),
         xaxis=dict(
@@ -97,8 +95,7 @@ def plot_question_satisfaction_improved(df, col_key, col_description):
             tickfont=dict(
                 size=12, 
                 color='#4a5568',
-                family='Inter, system-ui, -apple-system, sans-serif',
-                weight='500'
+                family='Inter, system-ui, -apple-system, sans-serif'
             ),
             title=''  # Sin título para look minimalista
         ),
