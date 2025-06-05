@@ -198,25 +198,51 @@ def plot_question_satisfaction(df, question_col, question_text):
         xaxis=dict(
             title=dict(
                 text="<b>CANTIDAD DE RESPUESTAS</b>",
-                font=dict(size=16, color='#34495E', family="Montserrat", weight="bold")
+                font=dict(size=16, color='#34495E', family="Montserrat", weight="bold"),
+                standoff=20
             ),
-            titlefont=dict(size=16, color='#34495E', family="Montserrat"),
             tickfont=dict(size=14, color='#2C3E50', family="Montserrat", weight="bold"),
             showgrid=True,
-            gridcolor='rgba(52, 73, 94, 0.1)',
+            gridcolor='rgba(52, 73, 94, 0.15)',
             gridwidth=2,
+            griddash='dot',
             showline=True,
-            linecolor='#34495E',
-            linewidth=3,
+            linecolor='#2C3E50',
+            linewidth=4,
+            mirror='ticks',
             zeroline=True,
             zerolinecolor='#E74C3C',
-            zerolinewidth=3
+            zerolinewidth=4,
+            tickmode='linear',
+            tick0=0,
+            dtick=max(1, max_value//8) if max_value > 8 else 1,
+            ticklen=8,
+            tickwidth=3,
+            tickcolor='#2C3E50',
+            ticks='outside',
+            separatethousands=True,
+            showspikes=True,
+            spikecolor='#E74C3C',
+            spikethickness=2,
+            spikemode='across'
         ),
         yaxis=dict(
             title="",
             tickfont=dict(size=15, color='#2C3E50', family="Montserrat", weight="bold"),
             showgrid=False,
-            showline=False,
+            showline=True,
+            linecolor='#2C3E50',
+            linewidth=4,
+            mirror='ticks',
+            ticklen=12,
+            tickwidth=4,
+            tickcolor='#2C3E50',
+            ticks='outside',
+            tickmode='array',
+            tickvals=list(range(len(count_df))),
+            ticktext=count_df['etiqueta_completa'].tolist(),
+            ticklabelstandoff=10,
+            automargin=True,
             categoryorder='array',
             categoryarray=count_df['etiqueta_completa'].tolist()
         ),
@@ -225,13 +251,21 @@ def plot_question_satisfaction(df, question_col, question_text):
         height=120 + (len(count_df) * 70),  # Altura dinámica generosa
         margin=dict(l=250, r=120, t=100, b=80),
         hovermode='y unified',
+        hoverlabel=dict(
+            bgcolor="rgba(44, 62, 80, 0.9)",
+            bordercolor="white",
+            borderwidth=2,
+            font=dict(size=14, color="white", family="Montserrat")
+        ),
+        dragmode='pan',
+        showlegend=False,
         # Añadir decoraciones visuales
         annotations=[
             # Información total en estilo llamativo
             dict(
-                text=f"<b style='font-size:18px; color:#E74C3C'>TOTAL:</b><br>" +
+                text=f"<b style='font-size:18px; color:#E74C3C'>📊 TOTAL:</b><br>" +
                      f"<b style='font-size:22px; color:#2C3E50'>{total}</b><br>" +
-                     f"<span style='font-size:14px; color:#7F8C8D'>respuestas</span>",
+                     f"<span style='font-size:14px; color:#7F8C8D'>respuestas válidas</span>",
                 xref="paper", yref="paper",
                 x=0.98, y=0.98,
                 xanchor='right', yanchor='top',
@@ -241,13 +275,15 @@ def plot_question_satisfaction(df, question_col, question_text):
                 bordercolor="#E74C3C",
                 borderwidth=3,
                 borderpad=15,
-                # Añadir sombra
+                # Añadir sombra visual
                 layer="above"
             ),
-            # Indicador de mejor/peor
+            # Indicador de mejor/peor con más detalle
             dict(
-                text=f"🏆 <b>MEJOR:</b> {count_df.iloc[-1]['emoji']} {count_df.iloc[-1]['Respuesta']}<br>" +
-                     f"⚠️ <b>MENOR:</b> {count_df.iloc[0]['emoji']} {count_df.iloc[0]['Respuesta']}",
+                text=f"🏆 <b>MÁS FRECUENTE:</b> {count_df.iloc[-1]['emoji']} " +
+                     f"{count_df.iloc[-1]['Respuesta']} ({count_df.iloc[-1]['Conteo']})<br>" +
+                     f"⚠️ <b>MENOS FRECUENTE:</b> {count_df.iloc[0]['emoji']} " +
+                     f"{count_df.iloc[0]['Respuesta']} ({count_df.iloc[0]['Conteo']})",
                 xref="paper", yref="paper", 
                 x=0.02, y=0.02,
                 xanchor='left', yanchor='bottom',
@@ -257,23 +293,45 @@ def plot_question_satisfaction(df, question_col, question_text):
                 bordercolor="#34495E",
                 borderwidth=2,
                 borderpad=10
+            ),
+            # Marca de agua con el título del aspecto
+            dict(
+                text=f"<i>{question_text.upper()}</i>",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5,
+                xanchor='center', yanchor='middle',
+                showarrow=False,
+                font=dict(size=32, color="rgba(44, 62, 80, 0.08)", family="Montserrat", weight="bold"),
+                layer="below"
             )
         ],
-        # Efectos de sombra y profundidad
+        # Efectos de sombra y profundidad mejorados
         shapes=[
-            # Línea decorativa superior
+            # Marco decorativo superior
+            dict(
+                type="rect",
+                x0=-max_value*0.02, y0=len(count_df)-0.3, 
+                x1=max_value*1.08, y1=len(count_df)+0.3,
+                fillcolor="rgba(231, 76, 60, 0.1)",
+                line=dict(color="#E74C3C", width=3),
+                layer="below"
+            ),
+            # Marco decorativo inferior  
+            dict(
+                type="rect",
+                x0=-max_value*0.02, y0=-0.7, 
+                x1=max_value*1.08, y1=0.3,
+                fillcolor="rgba(39, 174, 96, 0.1)",
+                line=dict(color="#27AE60", width=3),
+                layer="below"
+            ),
+            # Línea vertical de énfasis en el centro
             dict(
                 type="line",
-                x0=0, y0=len(count_df)-0.5, x1=max_value*1.05, y1=len(count_df)-0.5,
-                line=dict(color="#E74C3C", width=4, dash="solid"),
-                layer="above"
-            ),
-            # Línea decorativa inferior
-            dict(
-                type="line", 
-                x0=0, y0=-0.5, x1=max_value*1.05, y1=-0.5,
-                line=dict(color="#27AE60", width=4, dash="solid"),
-                layer="above"
+                x0=max_value/2, y0=-0.5, 
+                x1=max_value/2, y1=len(count_df)-0.5,
+                line=dict(color="rgba(142, 68, 173, 0.3)", width=2, dash="longdash"),
+                layer="below"
             )
         ]
     )
