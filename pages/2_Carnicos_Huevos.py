@@ -7,7 +7,7 @@ from utils.data_processing import (
 )
 
 # Función para convertir gráficos a barras horizontales
-def make_horizontal_chart(fig):
+def make_horizontal_chart(fig, title_with_icon=None):
     """
     Convierte cualquier gráfico de barras verticales a horizontales y aplica fondo blanco
     """
@@ -28,13 +28,24 @@ def make_horizontal_chart(fig):
                     trace.orientation = 'h'
         
         # Actualizar layout para fondo blanco y ajustar ejes
-        fig.update_layout(
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            xaxis_title="Número de Respuestas",
-            yaxis_title="Categorías de Respuesta",
-            yaxis={'categoryorder': 'total ascending'}  # Ordenar por valores
-        )
+        layout_updates = {
+            'plot_bgcolor': 'white',
+            'paper_bgcolor': 'white',
+            'xaxis_title': "Número de Respuestas",
+            'yaxis_title': "Categorías de Respuesta",
+            'yaxis': {'categoryorder': 'total ascending'}  # Ordenar por valores
+        }
+        
+        # Agregar título con icono si se proporciona
+        if title_with_icon:
+            layout_updates['title'] = {
+                'text': title_with_icon,
+                'x': 0.5,
+                'xanchor': 'center',
+                'font': {'size': 16}
+            }
+        
+        fig.update_layout(**layout_updates)
         
         return fig
         
@@ -50,7 +61,7 @@ st.set_page_config(
 )
 
 # Título y descripción
-st.title("Análisis de Satisfacción - Cárnicos y Huevos")
+st.title("🍖 Análisis de Satisfacción - Cárnicos y Huevos")
 st.markdown("""
 Esta sección presenta el análisis detallado de la satisfacción con los cárnicos (cerdo y pollo) y huevos entregados,
 incluyendo aspectos como etiquetado, estado de congelación, corte y empaque.
@@ -69,6 +80,9 @@ selected_comuna = None
 selected_barrio = None
 selected_nodo = None
 
+# Sidebar con iconos
+st.sidebar.title("🔧 Filtros (Desactivados)")
+
 # Intentar obtener el rango de fechas del state
 if 'fecha' in df.columns:
     df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
@@ -79,7 +93,7 @@ if 'fecha' in df.columns:
         max_date = valid_dates['fecha'].max().date()
         
         date_range = st.sidebar.date_input(
-            "Rango de fechas (Desactivado)",
+            "📅 Rango de fechas (Desactivado)",
             [min_date, max_date],
             min_value=min_date,
             max_value=max_date
@@ -88,38 +102,66 @@ if 'fecha' in df.columns:
 # Filtro por ubicación geográfica (desactivados)
 if 'comuna' in df.columns:
     all_comunas = ["Todas"] + sorted([str(x) for x in df['comuna'].unique() if pd.notna(x)])
-    selected_comuna = st.sidebar.selectbox("Comuna (Desactivado)", all_comunas)
+    selected_comuna = st.sidebar.selectbox("🏘️ Comuna (Desactivado)", all_comunas)
 
 if 'barrio' in df.columns:
     all_barrios = ["Todos"] + sorted([str(x) for x in df['barrio'].unique() if pd.notna(x)])
-    selected_barrio = st.sidebar.selectbox("Barrio (Desactivado)", all_barrios)
+    selected_barrio = st.sidebar.selectbox("🏠 Barrio (Desactivado)", all_barrios)
 
 if 'nodo' in df.columns:
     all_nodos = ["Todos"] + sorted([str(x) for x in df['nodo'].unique() if pd.notna(x)])
-    selected_nodo = st.sidebar.selectbox("Nodo (Desactivado)", all_nodos)
+    selected_nodo = st.sidebar.selectbox("📍 Nodo (Desactivado)", all_nodos)
 
 # Información sobre filtros desactivados
-st.sidebar.info("Los filtros están desactivados temporalmente para mostrar todos los datos disponibles.")
+st.sidebar.info("ℹ️ Los filtros están desactivados temporalmente para mostrar todos los datos disponibles.")
 
 # NO aplicar filtros - Usar el DataFrame completo
 filtered_df = df.copy()  # Usar todos los datos sin filtrar
 
 # Mostrar número de encuestas
-st.sidebar.metric("Total de encuestas", len(filtered_df))
+st.sidebar.metric("📊 Total de encuestas", len(filtered_df))
 
-# Mapeo de las columnas de cárnicos y huevos
+# Mapeo de las columnas de cárnicos y huevos con iconos
 carnicos_cols = {
-    '12carnes_bien_etiquetadas': 'Las carnes se encuentran bien etiquetadas (peso, fechas, tipo de corte)',
-    '13producto_congelado': 'El producto se encuentra congelado al momento de recibirlo',
-    '14corte_recibido': 'El corte del producto recibido es el mismo que aparece en la etiqueta',
-    '15fecha_vencimiento_adecuada': 'La fecha de vencimiento es adecuada para la preparación',
-    '16empacado_al_vacio': 'El producto está empacado al vacío',
-    '17estado_huevo': 'Estado de los huevos recibidos',
-    '18panal_de_huevo_etiquetado': 'El panal de huevos se encuentra etiquetado con fecha vencimiento'
+    '12carnes_bien_etiquetadas': {
+        'description': 'Las carnes se encuentran bien etiquetadas (peso, fechas, tipo de corte)',
+        'icon': '🏷️',
+        'title_with_icon': '🏷️ Etiquetado de Carnes'
+    },
+    '13producto_congelado': {
+        'description': 'El producto se encuentra congelado al momento de recibirlo',
+        'icon': '🧊',
+        'title_with_icon': '🧊 Estado de Congelación'
+    },
+    '14corte_recibido': {
+        'description': 'El corte del producto recibido es el mismo que aparece en la etiqueta',
+        'icon': '🔪',
+        'title_with_icon': '🔪 Correspondencia del Corte'
+    },
+    '15fecha_vencimiento_adecuada': {
+        'description': 'La fecha de vencimiento es adecuada para la preparación',
+        'icon': '📅',
+        'title_with_icon': '📅 Fecha de Vencimiento Adecuada'
+    },
+    '16empacado_al_vacio': {
+        'description': 'El producto está empacado al vacío',
+        'icon': '📦',
+        'title_with_icon': '📦 Empacado al Vacío'
+    },
+    '17estado_huevo': {
+        'description': 'Estado de los huevos recibidos',
+        'icon': '🥚',
+        'title_with_icon': '🥚 Estado de los Huevos'
+    },
+    '18panal_de_huevo_etiquetado': {
+        'description': 'El panal de huevos se encuentra etiquetado con fecha vencimiento',
+        'icon': '📋',
+        'title_with_icon': '📋 Etiquetado del Panal de Huevos'
+    }
 }
 
 # Análisis de satisfacción por pregunta
-st.header("Satisfacción con Cárnicos y Huevos")
+st.header("📊 Satisfacción con Cárnicos y Huevos")
 
 # Comprobar si existen las columnas
 available_cols = [col for col in carnicos_cols.keys() if col in filtered_df.columns]
@@ -129,7 +171,7 @@ if not available_cols:
     st.stop()
 
 # Crear tabs para diferentes categorías
-carnes_tab, huevos_tab = st.tabs(["Cárnicos", "Huevos"])
+carnes_tab, huevos_tab = st.tabs(["🥩 Cárnicos", "🥚 Huevos"])
 
 # Columnas de cárnicos
 carnes_cols = ['12carnes_bien_etiquetadas', '13producto_congelado', '14corte_recibido', 
@@ -138,28 +180,30 @@ carnes_available = [col for col in carnes_cols if col in available_cols]
 
 with carnes_tab:
     if carnes_available:
-        st.subheader("Satisfacción con Cárnicos")
+        st.subheader("🥩 Satisfacción con Cárnicos")
         
         # Mostrar gráficos en grid
         for i in range(0, len(carnes_available), 2):
             col1, col2 = st.columns(2)
             
             # Primera columna
-            fig1 = plot_question_satisfaction(filtered_df, carnes_available[i], carnicos_cols[carnes_available[i]])
+            col_info = carnicos_cols[carnes_available[i]]
+            fig1 = plot_question_satisfaction(filtered_df, carnes_available[i], col_info['description'])
             if fig1:
-                fig1_horizontal = make_horizontal_chart(fig1)
+                fig1_horizontal = make_horizontal_chart(fig1, col_info['title_with_icon'])
                 col1.plotly_chart(fig1_horizontal, use_container_width=True)
             else:
-                col1.info(f"No hay datos suficientes para '{carnicos_cols[carnes_available[i]]}'")
+                col1.info(f"No hay datos suficientes para '{col_info['description']}'")
             
             # Segunda columna (si existe)
             if i + 1 < len(carnes_available):
-                fig2 = plot_question_satisfaction(filtered_df, carnes_available[i+1], carnicos_cols[carnes_available[i+1]])
+                col_info2 = carnicos_cols[carnes_available[i+1]]
+                fig2 = plot_question_satisfaction(filtered_df, carnes_available[i+1], col_info2['description'])
                 if fig2:
-                    fig2_horizontal = make_horizontal_chart(fig2)
+                    fig2_horizontal = make_horizontal_chart(fig2, col_info2['title_with_icon'])
                     col2.plotly_chart(fig2_horizontal, use_container_width=True)
                 else:
-                    col2.info(f"No hay datos suficientes para '{carnicos_cols[carnes_available[i+1]]}'")
+                    col2.info(f"No hay datos suficientes para '{col_info2['description']}'")
     else:
         st.info("No se encontraron datos de satisfacción con cárnicos en la encuesta.")
 
@@ -169,33 +213,35 @@ huevos_available = [col for col in huevos_cols if col in available_cols]
 
 with huevos_tab:
     if huevos_available:
-        st.subheader("Satisfacción con Huevos")
+        st.subheader("🥚 Satisfacción con Huevos")
         
         # Mostrar gráficos en columnas
         col1, col2 = st.columns(2)
         
         # Primera columna (si existe)
         if len(huevos_available) > 0:
-            fig1 = plot_question_satisfaction(filtered_df, huevos_available[0], carnicos_cols[huevos_available[0]])
+            col_info = carnicos_cols[huevos_available[0]]
+            fig1 = plot_question_satisfaction(filtered_df, huevos_available[0], col_info['description'])
             if fig1:
-                fig1_horizontal = make_horizontal_chart(fig1)
+                fig1_horizontal = make_horizontal_chart(fig1, col_info['title_with_icon'])
                 col1.plotly_chart(fig1_horizontal, use_container_width=True)
             else:
-                col1.info(f"No hay datos suficientes para '{carnicos_cols[huevos_available[0]]}'")
+                col1.info(f"No hay datos suficientes para '{col_info['description']}'")
         
         # Segunda columna (si existe)
         if len(huevos_available) > 1:
-            fig2 = plot_question_satisfaction(filtered_df, huevos_available[1], carnicos_cols[huevos_available[1]])
+            col_info2 = carnicos_cols[huevos_available[1]]
+            fig2 = plot_question_satisfaction(filtered_df, huevos_available[1], col_info2['description'])
             if fig2:
-                fig2_horizontal = make_horizontal_chart(fig2)
+                fig2_horizontal = make_horizontal_chart(fig2, col_info2['title_with_icon'])
                 col2.plotly_chart(fig2_horizontal, use_container_width=True)
             else:
-                col2.info(f"No hay datos suficientes para '{carnicos_cols[huevos_available[1]]}'")
+                col2.info(f"No hay datos suficientes para '{col_info2['description']}'")
     else:
         st.info("No se encontraron datos de satisfacción con huevos en la encuesta.")
 
 # Análisis de Comedores con Insatisfacción
-st.header("Comedores con Niveles de Insatisfacción")
+st.header("⚠️ Comedores con Niveles de Insatisfacción")
 
 # Verificar que existan las columnas de satisfacción y la columna de identificación del comedor
 satisfaccion_cols = [col for col in carnicos_cols.keys() if col in filtered_df.columns]
@@ -238,7 +284,7 @@ else:
                 if comedor not in comedores_insatisfechos:
                     comedores_insatisfechos[comedor] = {}
                 
-                comedores_insatisfechos[comedor][carnicos_cols[col]] = count
+                comedores_insatisfechos[comedor][carnicos_cols[col]['description']] = count
     
     # Mostrar resultados
     if comedores_insatisfechos:
@@ -249,23 +295,23 @@ else:
         resultado_df = resultado_df.fillna(0)
         
         # Agregar columna de total
-        resultado_df['Total Insatisfacciones'] = resultado_df.sum(axis=1)
+        resultado_df['📊 Total Insatisfacciones'] = resultado_df.sum(axis=1)
         
         # Ordenar por total de insatisfacciones (descendente)
-        resultado_df = resultado_df.sort_values('Total Insatisfacciones', ascending=False)
+        resultado_df = resultado_df.sort_values('📊 Total Insatisfacciones', ascending=False)
         
         # Mostrar como tabla
-        st.write("Comedores con reportes de insatisfacción en cárnicos y huevos:")
+        st.write("🍽️ Comedores con reportes de insatisfacción en cárnicos y huevos:")
         st.dataframe(resultado_df, use_container_width=True)
         
         # Conclusión textual sobre comedores con insatisfacciones
-        st.subheader("Comedores con problemas de insatisfacción")
+        st.subheader("🎯 Comedores con problemas de insatisfacción")
         
         # Tomar los primeros comedores (los más problemáticos)
         top_comedores = resultado_df.head(5)
         
         # Crear conclusión textual
-        st.markdown("### Resumen de hallazgos")
+        st.markdown("### 📈 Resumen de hallazgos")
         
         # Texto introductorio
         st.markdown(f"""
@@ -279,32 +325,32 @@ else:
             # Obtener los aspectos con insatisfacción para este comedor
             aspectos_insatisfechos = []
             for aspecto, valor in row.items():
-                if aspecto != 'Total Insatisfacciones' and valor > 0:
+                if aspecto != '📊 Total Insatisfacciones' and valor > 0:
                     aspectos_insatisfechos.append(aspecto)
             
             aspectos_texto = ", ".join(aspectos_insatisfechos)
             st.markdown(f"""
-            - **{comedor}**: {int(row['Total Insatisfacciones'])} reportes de insatisfacción.
-              Aspectos problemáticos: {aspectos_texto}
+            - **🏪 {comedor}**: {int(row['📊 Total Insatisfacciones'])} reportes de insatisfacción.
+              **Aspectos problemáticos:** {aspectos_texto}
             """)
         
         # Recomendaciones generales
         st.markdown("""
-        ### Recomendaciones
+        ### 🎯 Recomendaciones
         
         Se sugiere implementar un plan de seguimiento especial para estos comedores, 
         con énfasis en los aspectos señalados como problemáticos. Es recomendable:
         
-        1. Revisar con los proveedores de cárnicos los estándares de calidad, especialmente para estos comedores
-        2. Verificar la cadena de frío durante el transporte a estas ubicaciones
-        3. Implementar un protocolo de inspección especial para los productos destinados a estos comedores
-        4. Realizar seguimiento a la calidad de los huevos, verificando su frescura y correcto etiquetado
+        1. 🔍 **Revisar con los proveedores** de cárnicos los estándares de calidad, especialmente para estos comedores
+        2. 🧊 **Verificar la cadena de frío** durante el transporte a estas ubicaciones
+        3. ✅ **Implementar un protocolo de inspección** especial para los productos destinados a estos comedores
+        4. 🥚 **Realizar seguimiento** a la calidad de los huevos, verificando su frescura y correcto etiquetado
         """)
     else:
-        st.success("No se encontraron comedores con reportes de insatisfacción en cárnicos y huevos.")
+        st.success("✅ No se encontraron comedores con reportes de insatisfacción en cárnicos y huevos.")
 
 # Conclusiones y recomendaciones
-st.header("Conclusiones y Recomendaciones")
+st.header("💡 Conclusiones y Recomendaciones")
 
 # Análisis automático basado en los datos
 if available_cols:
@@ -321,22 +367,27 @@ if available_cols:
     max_aspect = max(satisfaction_means, key=satisfaction_means.get)
     max_score = satisfaction_means[max_aspect]
     
+    # Obtener información con iconos
+    min_info = carnicos_cols[min_aspect]
+    max_info = carnicos_cols[max_aspect]
+    
     # Mostrar conclusiones
     st.markdown(f"""
-    Basado en el análisis de los datos:
+    📈 **Basado en el análisis de los datos:**
     
-    - El aspecto con **mayor satisfacción** es "{carnicos_cols[max_aspect]}" con un puntaje promedio de **{max_score:.2f}/5**.
-    - El aspecto con **menor satisfacción** es "{carnicos_cols[min_aspect]}" con un puntaje promedio de **{min_score:.2f}/5**.
+    - 🏆 El aspecto con **mayor satisfacción** es "{max_info['icon']} {max_info['description']}" con un puntaje promedio de **{max_score:.2f}/5**.
+    - ⚠️ El aspecto con **menor satisfacción** es "{min_info['icon']} {min_info['description']}" con un puntaje promedio de **{min_score:.2f}/5**.
     
-    **Recomendaciones:**
+    **🎯 Recomendaciones:**
     
-    - Revisar los procesos relacionados con "{carnicos_cols[min_aspect]}"
-    - Fortalecer los controles de calidad para cárnicos y huevos
-    - Evaluar la posibilidad de cambiar proveedores si los problemas persisten
+    - 🔧 Revisar los procesos relacionados con "{min_info['icon']} {min_info['description']}"
+    - 💪 Fortalecer los controles de calidad para cárnicos y huevos
+    - 🔄 Evaluar la posibilidad de cambiar proveedores si los problemas persisten
+    - ✅ Mantener las buenas prácticas relacionadas con "{max_info['icon']} {max_info['description']}"
     """)
 else:
-    st.info("No hay datos suficientes para generar conclusiones y recomendaciones.")
+    st.info("ℹ️ No hay datos suficientes para generar conclusiones y recomendaciones.")
 
 # Footer
 st.markdown("---")
-st.markdown("Dashboard de Análisis de la Encuesta de Satisfacción | Sección: Cárnicos y Huevos")
+st.markdown("📊 Dashboard de Análisis de la Encuesta de Satisfacción | 🍖 Sección: Cárnicos y Huevos")
