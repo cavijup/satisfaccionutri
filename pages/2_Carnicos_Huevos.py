@@ -6,6 +6,42 @@ from utils.data_processing import (
     COL_DESCRIPTIONS
 )
 
+# Función para convertir gráficos a barras horizontales
+def make_horizontal_chart(fig):
+    """
+    Convierte cualquier gráfico de barras verticales a horizontales y aplica fondo blanco
+    """
+    if fig is None:
+        return None
+    
+    try:
+        # Intercambiar x e y para hacer horizontal
+        for trace in fig.data:
+            if hasattr(trace, 'x') and hasattr(trace, 'y'):
+                # Intercambiar valores
+                temp_x = trace.x
+                trace.x = trace.y
+                trace.y = temp_x
+                
+                # Cambiar orientación
+                if hasattr(trace, 'orientation'):
+                    trace.orientation = 'h'
+        
+        # Actualizar layout para fondo blanco y ajustar ejes
+        fig.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            xaxis_title="Número de Respuestas",
+            yaxis_title="Categorías de Respuesta",
+            yaxis={'categoryorder': 'total ascending'}  # Ordenar por valores
+        )
+        
+        return fig
+        
+    except Exception as e:
+        print(f"Error convirtiendo a horizontal: {e}")
+        return fig
+
 # Configuración de la página
 st.set_page_config(
     page_title="Análisis de Cárnicos y Huevos",
@@ -111,7 +147,8 @@ with carnes_tab:
             # Primera columna
             fig1 = plot_question_satisfaction(filtered_df, carnes_available[i], carnicos_cols[carnes_available[i]])
             if fig1:
-                col1.plotly_chart(fig1, use_container_width=True)
+                fig1_horizontal = make_horizontal_chart(fig1)
+                col1.plotly_chart(fig1_horizontal, use_container_width=True)
             else:
                 col1.info(f"No hay datos suficientes para '{carnicos_cols[carnes_available[i]]}'")
             
@@ -119,7 +156,8 @@ with carnes_tab:
             if i + 1 < len(carnes_available):
                 fig2 = plot_question_satisfaction(filtered_df, carnes_available[i+1], carnicos_cols[carnes_available[i+1]])
                 if fig2:
-                    col2.plotly_chart(fig2, use_container_width=True)
+                    fig2_horizontal = make_horizontal_chart(fig2)
+                    col2.plotly_chart(fig2_horizontal, use_container_width=True)
                 else:
                     col2.info(f"No hay datos suficientes para '{carnicos_cols[carnes_available[i+1]]}'")
     else:
@@ -140,7 +178,8 @@ with huevos_tab:
         if len(huevos_available) > 0:
             fig1 = plot_question_satisfaction(filtered_df, huevos_available[0], carnicos_cols[huevos_available[0]])
             if fig1:
-                col1.plotly_chart(fig1, use_container_width=True)
+                fig1_horizontal = make_horizontal_chart(fig1)
+                col1.plotly_chart(fig1_horizontal, use_container_width=True)
             else:
                 col1.info(f"No hay datos suficientes para '{carnicos_cols[huevos_available[0]]}'")
         
@@ -148,7 +187,8 @@ with huevos_tab:
         if len(huevos_available) > 1:
             fig2 = plot_question_satisfaction(filtered_df, huevos_available[1], carnicos_cols[huevos_available[1]])
             if fig2:
-                col2.plotly_chart(fig2, use_container_width=True)
+                fig2_horizontal = make_horizontal_chart(fig2)
+                col2.plotly_chart(fig2_horizontal, use_container_width=True)
             else:
                 col2.info(f"No hay datos suficientes para '{carnicos_cols[huevos_available[1]]}'")
     else:
