@@ -251,6 +251,349 @@ def plot_question_satisfaction(df, question_col, question_text):
         height=120 + (len(count_df) * 70),  # Altura dinámica generosa
         margin=dict(l=250, r=120, t=100, b=80),
         hovermode='y unified',
+        # CORRECCIÓN: Eliminar borderwidth del hoverlabel
+        hoverlabel=dict(
+            bgcolor="rgba(44, 62, 80, 0.9)",
+            bordercolor="white",
+            font=dict(size=14, color="white", family="Montserrat")
+        ),
+        dragmode='pan',
+        showlegend=False,
+        # Añadir decoraciones visuales
+        annotations=[
+            # Información total en estilo llamativo
+            dict(
+                text=f"<b style='font-size:18px; color:#E74C3C'>📊 TOTAL:</b><br>" +
+                     f"<b style='font-size:22px; color:#2C3E50'>{total}</b><br>" +
+                     f"<span style='font-size:14px; color:#7F8C8D'>respuestas válidas</span>",
+                xref="paper", yref="paper",
+                x=0.98, y=0.98,
+                xanchor='right', yanchor='top',
+                showarrow=False,
+                font=dict(family="Montserrat"),
+                bgcolor="rgba(255, 255, 255, 0.95)",
+                bordercolor="#E74C3C",
+                borderwidth=3,
+                borderpad=15,
+                # Añadir sombra visual
+                layer="above"
+            ),
+            # Indicador de mejor/peor con más detalle
+            dict(
+                text=f"🏆 <b>MÁS FRECUENTE:</b> {count_df.iloc[-1]['emoji']} " +
+                     f"{count_df.iloc[-1]['Respuesta']} ({count_df.iloc[-1]['Conteo']})<br>" +
+                     f"⚠️ <b>MENOS FRECUENTE:</b> {count_df.iloc[0]['emoji']} " +
+                     f"{count_df.iloc[0]['Respuesta']} ({count_df.iloc[0]['Conteo']})",
+                xref="paper", yref="paper", 
+                x=0.02, y=0.02,
+                xanchor='left', yanchor='bottom',
+                showarrow=False,
+                font=dict(size=12, family="Montserrat", weight="bold"),
+                bgcolor="rgba(236, 240, 241, 0.95)",
+                bordercolor="#34495E",
+                borderwidth=2,
+                borderpad=10
+            ),
+            # Marca de agua con el título del aspecto
+            dict(
+                text=f"<i>{question_text.upper()}</i>",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5,
+                xanchor='center', yanchor='middle',
+                showarrow=False,
+                font=dict(size=32, color="rgba(44, 62, 80, 0.08)", family="Montserrat", weight="bold"),
+                layer="below"
+            )
+        ],
+        # Efectos de sombra y profundidad mejorados
+        shapes=[
+            # Marco decorativo superior
+            dict(
+                type="rect",
+                x0=-max_value*0.02, y0=len(count_df)-0.3, 
+                x1=max_value*1.08, y1=len(count_df)+0.3,
+                fillcolor="rgba(231, 76, 60, 0.1)",
+                line=dict(color="#E74C3C", width=3),
+                layer="below"
+            ),
+            # Marco decorativo inferior  
+            dict(
+                type="rect",
+                x0=-max_value*0.02, y0=-0.7, 
+                x1=max_value*1.08, y1=0.3,
+                fillcolor="rgba(39, 174, 96, 0.1)",
+                line=dict(color="#27AE60", width=3),
+                layer="below"
+            ),
+            # Línea vertical de énfasis en el centro
+            dict(
+                type="line",
+                x0=max_value/2, y0=-0.5, 
+                x1=max_value/2, y1=len(count_df)-0.5,
+                line=dict(color="rgba(142, 68, 173, 0.3)", width=2, dash="longdash"),
+                layer="below"
+            )
+        ]
+    )
+    
+    # Añadir línea de referencia promedio con estilo
+    if len(count_df) >= 2:
+        promedio = count_df['Conteo'].mean()
+        fig.add_vline(
+            x=promedio,
+            line_dash="dash",
+            line_color="#8E44AD",
+            line_width=4,
+            opacity=0.8,
+            annotation_text=f"📊 PROMEDIO: {promedio:.1f}",
+            annotation_position="top",
+            annotation_font=dict(size=14, color="#8E44AD", family="Montserrat", weight="bold"),
+            annotation_bgcolor="rgba(142, 68, 173, 0.1)",
+            annotation_bordercolor="#8E44AD",
+            annotation_borderwidth=2
+        )
+    
+    return fig
+    """
+    Crea un gráfico de barras horizontales con máximo impacto visual
+    """
+    label_col = question_col + '_label'
+
+    # Determinar qué columna usar
+    if label_col in df.columns and df[label_col].notna().any():
+        col_to_use = label_col
+    elif question_col in df.columns:
+        col_to_use = question_col
+    else:
+        # Crear figura vacía con diseño impactante
+        fig = go.Figure()
+        fig.add_annotation(
+            text="⚠️ DATOS NO DISPONIBLES",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, xanchor='center', yanchor='middle',
+            showarrow=False, 
+            font=dict(size=24, color="#E74C3C", family="Montserrat", weight="bold"),
+            bgcolor="rgba(231, 76, 60, 0.1)",
+            bordercolor="#E74C3C",
+            borderwidth=2,
+            borderpad=20
+        )
+        fig.update_layout(
+            title=dict(
+                text=f"🚫 {question_text}",
+                font=dict(size=20, color='#2C3E50', family="Montserrat", weight="bold"),
+                x=0.5
+            ),
+            height=400,
+            plot_bgcolor='#F8F9FA',
+            paper_bgcolor='white'
+        )
+        return fig
+
+    # Contar frecuencias de las respuestas
+    count_df = df[col_to_use].dropna().value_counts().reset_index()
+    count_df.columns = ['Respuesta', 'Conteo']
+
+    if count_df.empty:
+        # Figura vacía con diseño impactante
+        fig = go.Figure()
+        fig.add_annotation(
+            text="📊 SIN DATOS VÁLIDOS",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, xanchor='center', yanchor='middle',
+            showarrow=False,
+            font=dict(size=22, color="#F39C12", family="Montserrat", weight="bold"),
+            bgcolor="rgba(243, 156, 18, 0.1)",
+            bordercolor="#F39C12",
+            borderwidth=2,
+            borderpad=15
+        )
+        fig.update_layout(
+            title=dict(
+                text=f"📈 {question_text}",
+                font=dict(size=20, color='#2C3E50', family="Montserrat", weight="bold"),
+                x=0.5
+            ),
+            height=400,
+            plot_bgcolor='#F8F9FA',
+            paper_bgcolor='white'
+        )
+        return fig
+
+    # Mapear respuestas para ordenamiento
+    satisfaction_order = {
+        "MUY INSATISFECHO/A": 1,
+        "INSATISFECHO/A": 2, 
+        "NI SATISFECHO/A NI INSATISFECHO/A": 3,
+        "SATISFECHO/A": 4,
+        "MUY SATISFECHO/A": 5,
+        "MUY INSATISFECHO": 1,
+        "INSATISFECHO": 2,
+        "NEUTRAL": 3,
+        "SATISFECHO": 4,
+        "MUY SATISFECHO": 5,
+        1: 1, 2: 2, 3: 3, 4: 4, 5: 5
+    }
+    
+    # Ordenar datos (de menor a mayor para barras horizontales)
+    count_df['orden'] = count_df['Respuesta'].map(satisfaction_order)
+    count_df = count_df.sort_values('orden', na_position='first')  # Menor arriba
+    
+    # Paleta de colores vibrante y de alto impacto
+    impact_colors = {
+        "MUY INSATISFECHO/A": "#FF1744",     # Rojo intenso
+        "INSATISFECHO/A": "#FF5722",         # Naranja fuerte
+        "NI SATISFECHO/A NI INSATISFECHO/A": "#FFB300", # Amarillo dorado
+        "SATISFECHO/A": "#4CAF50",           # Verde vibrante
+        "MUY SATISFECHO/A": "#00E676",       # Verde neón
+        "MUY INSATISFECHO": "#FF1744",
+        "INSATISFECHO": "#FF5722", 
+        "NEUTRAL": "#FFB300",
+        "SATISFECHO": "#4CAF50",
+        "MUY SATISFECHO": "#00E676",
+        1: "#FF1744", 2: "#FF5722", 3: "#FFB300", 4: "#4CAF50", 5: "#00E676"
+    }
+    
+    # Asignar colores
+    count_df['color'] = count_df['Respuesta'].map(impact_colors)
+    count_df['color'] = count_df['color'].fillna("#9E9E9E")
+    
+    # Calcular porcentajes
+    total = count_df['Conteo'].sum()
+    count_df['Porcentaje'] = (count_df['Conteo'] / total * 100).round(1)
+    
+    # Emojis de alto impacto
+    emoji_map = {
+        "MUY INSATISFECHO/A": "😠",
+        "INSATISFECHO/A": "😞",
+        "NI SATISFECHO/A NI INSATISFECHO/A": "😐",
+        "SATISFECHO/A": "😊",
+        "MUY SATISFECHO/A": "🤩",
+        "MUY INSATISFECHO": "😠",
+        "INSATISFECHO": "😞",
+        "NEUTRAL": "😐",
+        "SATISFECHO": "😊",
+        "MUY SATISFECHO": "🤩",
+        1: "😠", 2: "😞", 3: "😐", 4: "😊", 5: "🤩"
+    }
+    count_df['emoji'] = count_df['Respuesta'].map(emoji_map).fillna("📊")
+    
+    # Crear etiquetas con emojis grandes y texto impactante
+    count_df['etiqueta_completa'] = count_df['emoji'] + "  " + count_df['Respuesta'].astype(str)
+    
+    # Crear el gráfico horizontal de alto impacto
+    fig = go.Figure()
+    
+    # Añadir barras con efectos visuales extremos
+    fig.add_trace(go.Bar(
+        x=count_df['Conteo'],
+        y=count_df['etiqueta_completa'],
+        orientation='h',
+        marker=dict(
+            color=count_df['color'],
+            line=dict(color='white', width=3),
+            opacity=0.95,
+            # Añadir gradiente y efectos 3D
+            pattern=dict(
+                shape="",
+                bgcolor=count_df['color'],
+                fgcolor=count_df['color']
+            )
+        ),
+        text=[f'<b>{conteo}</b><br><span style="font-size:14px">({porcentaje}%)</span>' 
+              for conteo, porcentaje in zip(count_df['Conteo'], count_df['Porcentaje'])],
+        textposition='outside',
+        textfont=dict(
+            size=16, 
+            color='#2C3E50',
+            family="Montserrat",
+            weight="bold"
+        ),
+        hovertemplate=(
+            "<b style='font-size:16px'>%{y}</b><br>" +
+            "<span style='font-size:14px'>Cantidad: <b>%{x}</b></span><br>" +
+            "<span style='font-size:14px'>Porcentaje: <b>%{customdata}%</b></span><br>" +
+            "<extra></extra>"
+        ),
+        customdata=count_df['Porcentaje'],
+        showlegend=False
+    ))
+    
+    # Añadir líneas de fondo para mayor impacto visual
+    max_value = count_df['Conteo'].max()
+    for i in range(len(count_df)):
+        fig.add_shape(
+            type="rect",
+            x0=0, y0=i-0.4, x1=max_value*1.1, y1=i+0.4,
+            fillcolor="rgba(0,0,0,0.03)" if i % 2 == 0 else "rgba(0,0,0,0.01)",
+            layer="below",
+            line=dict(width=0)
+        )
+    
+    # Layout de máximo impacto visual
+    fig.update_layout(
+        title=dict(
+            text=f"📊 <b>{question_text}</b>",
+            font=dict(size=24, color='#2C3E50', family="Montserrat", weight="bold"),
+            x=0.5,
+            y=0.95
+        ),
+        xaxis=dict(
+            title=dict(
+                text="<b>CANTIDAD DE RESPUESTAS</b>",
+                font=dict(size=16, color='#34495E', family="Montserrat", weight="bold"),
+                standoff=20
+            ),
+            tickfont=dict(size=14, color='#2C3E50', family="Montserrat", weight="bold"),
+            showgrid=True,
+            gridcolor='rgba(52, 73, 94, 0.15)',
+            gridwidth=2,
+            griddash='dot',
+            showline=True,
+            linecolor='#2C3E50',
+            linewidth=4,
+            mirror='ticks',
+            zeroline=True,
+            zerolinecolor='#E74C3C',
+            zerolinewidth=4,
+            tickmode='linear',
+            tick0=0,
+            dtick=max(1, max_value//8) if max_value > 8 else 1,
+            ticklen=8,
+            tickwidth=3,
+            tickcolor='#2C3E50',
+            ticks='outside',
+            separatethousands=True,
+            showspikes=True,
+            spikecolor='#E74C3C',
+            spikethickness=2,
+            spikemode='across'
+        ),
+        yaxis=dict(
+            title="",
+            tickfont=dict(size=15, color='#2C3E50', family="Montserrat", weight="bold"),
+            showgrid=False,
+            showline=True,
+            linecolor='#2C3E50',
+            linewidth=4,
+            mirror='ticks',
+            ticklen=12,
+            tickwidth=4,
+            tickcolor='#2C3E50',
+            ticks='outside',
+            tickmode='array',
+            tickvals=list(range(len(count_df))),
+            ticktext=count_df['etiqueta_completa'].tolist(),
+            ticklabelstandoff=10,
+            automargin=True,
+            categoryorder='array',
+            categoryarray=count_df['etiqueta_completa'].tolist()
+        ),
+        plot_bgcolor='#FAFBFC',
+        paper_bgcolor='white',
+        height=120 + (len(count_df) * 70),  # Altura dinámica generosa
+        margin=dict(l=250, r=120, t=100, b=80),
+        hovermode='y unified',
         hoverlabel=dict(
             bgcolor="rgba(44, 62, 80, 0.9)",
             bordercolor="white",
